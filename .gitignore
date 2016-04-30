@@ -1,0 +1,5 @@
+/python34/
+/sandbox
+*.o
+*.a
+*.so
