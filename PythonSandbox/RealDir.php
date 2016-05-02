@@ -34,15 +34,23 @@ class RealDir extends DirBase {
 			return parent::getChild( $name );
 		}
 
-		$di = new \DirectoryIterator( $this->realpath );
+		static $x = 0;
+		if ( ++$x == 5 ) {
+			$bt = debug_backtrace();
+			foreach ( $bt as $l ) {
+				echo "$l[class]::$l[function] at $l[file] ($l[line])\n";
+			}
+			exit;
+		}
+		$di = scandir( $this->realpath );
 		foreach ( $di as $item ) {
-			if ( $item->isDot() || $item->getFilename() !== $name ) {
+			if ( $item === '.' || $item === '..' || $item !== $name ) {
 				continue;
 			}
 
-			$fullpath = $item->getPathname();
+			$fullpath = $this->realpath . '/' . $item;
 
-			if ( $item->isLink() ) {
+			if ( is_link( $fullpath ) ) {
 				if ( !$this->diropts['followSymlinks'] ) {
 					return null;
 				}

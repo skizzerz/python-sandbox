@@ -44,12 +44,45 @@ class SyscallHandler {
 			}
 
 			echo "<<< $syscall(" . implode( ', ', $dbgargs ) . ")\n";
-			return;
+
+			$method = "sys__{$syscall}__{$nargs}";
+			if ( $self->hasMethod( $method ) ) {
+				try {
+					$m = $self->getMethod( $method );
+					$ret = $m->invokeArgs( $this, $args );
+					$data = false;
+
+					if ( is_array( $ret ) ) {
+						list( $ret, $data ) = $ret;
+					}
+				} catch ( SyscallException $e ) {
+					$ret = -1;
+					$data = $e->getCode();
+				}
+
+				echo ">>> $ret\n";
+				$this->writeInt( $ret );
+
+				if ( $data !== false ) {
+					echo ">>> $data\n";
+					if ( $ret === -1 ) {
+						$this->writeInt( $data );
+					} else {
+						$this->writeData( $data );
+					}
+				}
+			} else {
+				return;
+			}
 		}
 	}
 
+	public function sys__open__3( $path, $flags, $mode ) {
+		return $this->sb->getfs()->open( $path, $flags, $mode );
+	}
+
 	protected function readInt() {
-		return unpack( 'iv', $this->readData( 4 ) )['v'];
+		return $this->readData( 4, TYPE_INT );
 	}
 
 	protected function readByte() {
@@ -155,5 +188,52 @@ class SyscallHandler {
 		}
 
 		return $data;
+	}
+
+	protected function writeInt( $int ) {
+		$data = pack( 'i', $int );
+		$this->writeData( $data );
+	}
+
+	protected function writeData( $data ) {
+		$written = 0;
+		$tries = 0;
+		$off = 0;
+		$length = strlen( $data );
+
+		while ( true ) {
+			// we wait a maximum of 5 seconds for pipe to be available,
+			// if that times out we terminate the sandbox due to a timeout
+			$r = [];
+			$w = [ $this->wpipe ];
+			$x = [];
+
+			$ret = stream_select( $r, $w, $x, 5 );
+			if ( !$ret ) {
+				throw new SandboxException( 'Error with select: timeout expired or other error.' );
+			}
+
+			$ret = fwrite( $this->wpipe, substr( $data, $off ) );
+
+			if ( $ret === false ) {
+				throw new SandboxException( 'Unable to write to child: fwrite returned false.' );
+			} elseif ( $ret === 0 ) {
+				if ( feof( $this->wpipe ) ) {
+					throw new SandboxException( 'Unexpected EOF.' );
+				}
+
+				++$tries;
+				if ( $tries > 3 ) {
+					throw new SandboxException( 'Unable to write to child: Broken pipe.' );
+				}
+			}
+
+			$written += $ret;
+			$off += $ret;
+
+			if ( $written == $length ) {
+				break;
+			}
+		}
 	}
 }

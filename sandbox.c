@@ -330,6 +330,53 @@ void trampoline(int signal, siginfo_t *siginfo, void *void_ctx)
 			stream_data((void *)&SB_P3(ctx), sizeof(int), TYPE_INT);
 			ret = read_response(&old_errno);
 			break;
+		case SCMP_SYS(fcntl):
+		{
+			// int fcntl(int fd, int cmd, ... /* arg */)
+			// this syscall has either 2 or 3 args depending on cmd
+			int numargs = 2;
+			const char *cmd = "?";
+			switch ((int)SB_P2(ctx)) {
+				case F_DUPFD:
+					numargs = 3;
+					cmd = "F_DUPFD";
+					break;
+				case F_DUPFD_CLOEXEC:
+					numargs = 3;
+					cmd = "F_DUPFD_CLOEXEC";
+					break;
+				case F_GETFD:
+					cmd = "F_GETFD";
+					break;
+				case F_SETFD:
+				case F_SETFL:
+				case F_SETLK:
+				case F_SETLKW:
+				case F_GETLK:
+#ifdef F_OFD_SETLK
+				case F_OFD_SETLK:
+				case F_OFD_SETLKW:
+				case F_OFD_GETLK:
+#endif
+				case F_SETOWN:
+				case F_GETOWN_EX:
+				case F_SETOWN_EX:
+				case F_SETSIG:
+				case F_SETLEASE:
+				case F_NOTIFY:
+				case F_SETPIPE_SZ:
+#ifdef F_ADD_SEALS
+				case F_ADD_SEALS:
+#endif
+					numargs = 3;
+			}
+
+			stream_numargs(numargs);
+			stream_data((void *)&SB_P1(ctx), sizeof(int), TYPE_INT);
+			stream_data((void *)cmd, strlen(cmd), TYPE_STR);
+			if (numargs == 3) // not always an int, need to also set type above
+				stream_data((void *)&SB_P3(ctx), sizeof(int), TYPE_INT);
+		}
 		default:
 			stream_numargs(0);
 			exit(EINVAL);

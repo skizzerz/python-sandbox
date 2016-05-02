@@ -14,7 +14,7 @@ abstract class DirBase extends Node implements \ArrayAccess, \Iterator {
 	}
 
 	public function removeChild( Node $child ) {
-		if ( $this->hasChild( $child ) && $child->getParent() == $this ) {
+		if ( $this->hasChild( $child ) ) {
 			unset( $this[$child] );
 		}
 	}
@@ -36,7 +36,7 @@ abstract class DirBase extends Node implements \ArrayAccess, \Iterator {
 	}
 
 	protected function getChild( $name ) {
-		return $this->nodes[$name];
+		return isset( $this->nodes[$name] ) ? $this->nodes[$name] : null;
 	}
 
 	protected function addChildInternal( $name, $child ) {
@@ -62,7 +62,7 @@ abstract class DirBase extends Node implements \ArrayAccess, \Iterator {
 			$offset = $offset->getName();
 		}
 
-		return $this->offsetExists( $offset ) ? $this->getChild( $offset ) : null;
+		return $this->getChild( $offset );
 	}
 
 	public function offsetSet( $offset, $value ) {

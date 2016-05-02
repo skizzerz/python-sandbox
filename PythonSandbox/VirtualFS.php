@@ -22,7 +22,7 @@ class VirtualFS {
 	}
 
 	protected function getNode( $path ) {
-		if ( $path[0] === '/' ) {
+		if ( $path[0] !== '/' ) {
 			$path = $this->cwd . '/' . $path;
 		}
 

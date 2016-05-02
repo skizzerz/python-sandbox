@@ -48,10 +48,10 @@ abstract class Node {
 	}
 
 	public function setParent( Node $parent = null ) {
-		if ( $parent === null && !$this->parent->hasChild( $this ) ) {
+		if ( $parent === null ) {
 			$this->parent = null;
 			$this->path = null;
-		} elseif ( $parent->hasChild( $this ) ) {
+		} else {
 			if ( $this->parent !== null ) {
 				$this->parent->removeChild( $this );
 			}
