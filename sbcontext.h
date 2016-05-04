@@ -1,3 +1,17 @@
+#ifndef SYS_SECCOMP
+#define SYS_SECCOMP 1
+#endif
+
+// fds for our input and output, opened by the parent proc
+#define PIPEIN 3
+#define PIPEOUT 4
+
+// default resource usage limits by sandbox, 64 MiB of memory and 5 seconds of cpu time
+// these can be modified (increased or decreased) by argv params
+#define DEF_MEMORY 67108864
+#define DEF_CPU 5
+
+#ifdef SB_DEBUG
 // architecture-dependent macros to manipulate registers given a ucontext_t
 // register mapping lifted from man syscall(2) and browsing ucontext.h source
 
@@ -12,7 +26,7 @@
 #define SB_P6(ctx) SB_REG(ctx, REG_R9)
 #define SB_RET(ctx) SB_REG(ctx, REG_RAX)
 
-#elif defined(__i386__)
+#elif defined(__i386__) /* arch */
 
 #define SB_REG(ctx, reg) ((ctx)->uc_mcontext.gregs[(reg)])
 #define SB_P1(ctx) SB_REG(ctx, REG_EBX)
@@ -23,7 +37,7 @@
 #define SB_P6(ctx) SB_REG(ctx, REG_EDP)
 #define SB_RET(ctx) SB_REG(ctx, REG_EAX)
 
-#endif
+#endif /* arch */
 
 // map syscall ints to numbers (table generated via ausyscall --dump)
 
@@ -356,7 +370,7 @@ static const char *syscalls[] = {
 NULL
 };
 
-#elif defined(__i386__)
+#elif defined(__i386__) /* arch */
 
 static const int nsyscalls = 358;
 static const char *syscalls[] = {
@@ -717,5 +731,5 @@ static const char *syscalls[] = {
 NULL
 };
 
-#endif
-
+#endif /* arch */
+#endif /* SB_DEBUG */

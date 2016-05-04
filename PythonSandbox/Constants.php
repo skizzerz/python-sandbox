@@ -2,12 +2,6 @@
 
 namespace PythonSandbox;
 
-// type constants for marshalling data to/from sandbox
-const TYPE_STR  = 0; // string
-const TYPE_INT  = 1; // signed integer (2, 4, 8 bytes)
-const TYPE_UINT = 2; // unsigned integer (2, 4, 8 bytes)
-const TYPE_FLT  = 3; // floating point
-
 // errno constants
 const EPERM   = 1;  // Operation not permitted
 const ENOENT  = 2;  // No such file or directory

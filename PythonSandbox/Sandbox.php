@@ -18,13 +18,14 @@ class Sandbox {
 
 	public function __construct( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath ) {
 		$this->fs = new VirtualFS( $pyBinPath, $pyLibPath, $sbLibPath );
-		$this->sandboxPath = $sbBinPath;
+		$this->sandboxPath = "$sbBinPath/sandbox";
 		$this->env = [
 			'PYTHONHOME' => '/lib/python',
 			'PYTHONPATH' => '/lib/sandbox',
 			'PYTHONDONTWRITEBYTECODE' => '1',
 			'PYTHONNOUSERSITE' => '1',
-			'PATH' => '/bin'
+			'PATH' => '/bin',
+			'LD_PRELOAD' => "$sbBinPath/sblibc.so"
 		];
 	}
 

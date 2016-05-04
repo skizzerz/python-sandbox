@@ -11,6 +11,6 @@ $IP = __DIR__;
 $pyBin = "$IP/python34/bin/python3";
 $pyLib = "$IP/python34/lib/python3.4";
 $sbLib = "$IP/lib";
-$sbBin = "$IP/sandbox";
+$sbBin = $IP;
 
 PythonSandbox\Sandbox::runNewSandbox($sbBin, $pyBin, $sbLib, $pyLib);
