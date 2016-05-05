@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <execinfo.h>
 
 #include "sbcontext.h"
 #include "sblibc.h"
@@ -20,11 +21,15 @@ static FILE *pipein = NULL;
 // helper function to write json string to pipeout, terminated with a newline
 static int writejson(const char *json)
 {
+	int ret;
+
 	if (pipeout == NULL) {
 		pipeout = fdopen(PIPEOUT, "w");
 	}
 
-	return fprintf(pipeout, "%s\n", json);
+	ret = fprintf(pipeout, "%s\n", json);
+	fflush(pipeout);
+	return ret;
 }
 
 // helper function to read json string from pipein (until a newline is encountered)
@@ -62,6 +67,18 @@ cleanup:
 	return code;
 }
 
+void _debug_backtrace() {
+	void *buffer[32];
+	int n = backtrace(buffer, 32);
+	backtrace_symbols_fd(buffer, n, STDOUT_FILENO);
+}
+
+void fatal(const char *msg)
+{
+	fprintf(stderr, "*** %s ***: sandbox terminated\n", msg);
+	exit(1);
+}
+
 // we send a JSON line containing the call in the following format:
 // {"name": "str", "args": [any...]}
 // we then get a JSON reply in the following format:
@@ -87,8 +104,9 @@ int trampoline(struct json_object **out, const char *fname, int numargs, ...)
 	json_object_object_add(callinfo, "name", name);
 	json_object_object_add(callinfo, "args", args);
 
-	ret = writejson(json_object_get_string(callinfo));
+	ret = writejson(json_object_to_json_string_ext(callinfo, JSON_C_TO_STRING_PLAIN));
 	if (ret < 0) {
+		debug_error("writejson failed with errno %d\n", errno);
 		exit(errno);
 	} else if (feof(pipeout)) {
 		exit(-SIGPIPE);
@@ -96,27 +114,32 @@ int trampoline(struct json_object **out, const char *fname, int numargs, ...)
 
 	ret = readjson(&response);
 	if (ret < 0) {
+		debug_error("readjson failed with errno %d\n", errno);
 		exit(errno);
 	} else if (feof(pipein)) {
 		exit(-SIGPIPE);
 	}
 
 	if (!json_object_is_type(response, json_type_object)) {
+		debug_error("response is not json object.\n");
 		exit(EPROTO);
 	}
 
 	if (!json_object_object_get_ex(response, "code", &json_code)) {
+		debug_error("response does not have field code.\n");
 		exit(EPROTO);
 	}
 
 	if (!json_object_is_type(json_code, json_type_int)) {
+		debug_error("response code is not int.\n");
 		exit(EPROTO);
 	}
 
 	ret = json_object_get_int(json_code);
 
-	if (ret == -1 && json_object_object_get_ex(*out, "errno", &json_errno)) {
+	if (ret == -1 && json_object_object_get_ex(response, "errno", &json_errno)) {
 		if (!json_object_is_type(json_errno, json_type_int)) {
+			debug_error("response has errno but it is not int.\n");
 			exit(EPROTO);
 		}
 

@@ -42,9 +42,18 @@ class Sandbox {
 	public function run() {
 		// proc_open spawns the subproc in a shell, which is not desirable here, so we use exec
 		// the child proc only has direct access to stdin/stdout/stderr during init, once the
-		// sandbox is established it can only read from 3 and write to 4.
+		// sandbox is established it can only read from 3 and 5 and write to 4.
+		// the json library requires reading from /dev/urandom so we allow direct access to that
+		// (otherwise we get into an infinite loop)
 		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /bin/python 0 0",
-			[ 0 => STDIN, 1 => STDOUT, 2 => STDERR, 3 => [ 'pipe', 'r' ], 4 => [ 'pipe', 'w' ] ],
+			[
+				0 => STDIN,
+				1 => STDOUT,
+				2 => STDERR,
+				3 => [ 'pipe', 'r' ],
+				4 => [ 'pipe', 'w' ],
+				5 => [ 'file', '/dev/urandom', 'rb' ]
+			],
 			$this->pipes, '/tmp', $this->env );
 
 		if ( $this->proc === false ) {
@@ -65,6 +74,7 @@ class Sandbox {
 			fclose( $this->pipes[3] );
 			fclose( $this->pipes[4] );
 			$status = proc_close( $this->proc );
+			echo "Child exited with $status.\n";
 			$this->proc = false;
 		}
 

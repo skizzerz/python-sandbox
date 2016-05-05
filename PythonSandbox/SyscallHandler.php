@@ -83,12 +83,22 @@ class SyscallHandler {
 
 				fprintf( $this->wpipe, "%s\n", $ret );
 			} else {
+				echo "No such method $method.\n";
 				return;
 			}
 		}
 	}
 
+	public function sys__open__2( $path, $flags ) {
+		return $this->sb->getfs()->open( $path, $flags, 0 );
+	}
+
 	public function sys__open__3( $path, $flags, $mode ) {
 		return $this->sb->getfs()->open( $path, $flags, $mode );
+	}
+
+	public function sys__close__1( $fd ) {
+		$this->sb->getfs()->close( $fd );
+		return 0;
 	}
 }

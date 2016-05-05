@@ -16,9 +16,7 @@ class VirtualFS {
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root['lib'][] = new RealDir( $this, 'sandbox', $sbLib,
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
-		$this->root[] = new VirtualDir($this, 'tmp');
-		$this->root[] = new RealDir( $this, 'dev', '/dev',
-			[ 'fileWhitelist' => [ 'urandom' ] ] );
+		$this->root[] = new VirtualDir( $this, 'tmp' );
 	}
 
 	protected function getNode( $path ) {
@@ -75,7 +73,7 @@ class VirtualFS {
 		}
 
 		$maxfds = Configuration::singleton()->get( 'MaxFDs' );
-		for ( $i = 5; $i < $maxfds; ++$i ) {
+		for ( $i = 6; $i < $maxfds; ++$i ) {
 			if ( !isset( $this->fds[$i] ) ) {
 				$this->fds[$i] = $node->open( $flags, $mode );
 				return $i;
@@ -86,7 +84,7 @@ class VirtualFS {
 	}
 
 	public function close( $fd ) {
-		if ( $fd >= 0 && $fd <= 4 ) {
+		if ( $fd >= 0 && $fd <= 5 ) {
 			throw new SyscallException( EPERM );
 		} elseif ( !isset( $this->fds[$fd] ) ) {
 			throw new SyscallException( EBADF );
@@ -100,7 +98,7 @@ class VirtualFS {
 		$maxlen = Configuration::singleton()->get( 'MaxReadLength' );
 		if ( $length > $maxlen ) {
 			throw new SyscallException( EIO );
-		} elseif ( $fd >= 0 && $fd <= 4 ) {
+		} elseif ( $fd >= 0 && $fd <= 5 ) {
 			throw new SyscallException( EPERM );
 		} elseif ( !isset( $this->fds[$fd] ) ) {
 			throw new SyscallException( EBADF );

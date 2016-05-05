@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <execinfo.h>
 
 #include "sbcontext.h"
 #include "sbdebug.h"
@@ -28,21 +29,36 @@ int main(int argc, char *argv[])
 	scmp_filter_ctx ctx = NULL;
 #endif
 
+#ifdef SB_DEBUG
+	// not used, it's here to force loading of the relevant .sos before the sandbox inits
+	// so that we can safely print backtraces in the sigtrap handler
+	void *bt_buffer[32];
+	int bt_n = backtrace(bt_buffer, 32);
+	char **bt_sym = backtrace_symbols(bt_buffer, bt_n);
+	free(bt_sym);
+#endif
+
 	// verify we have all necessary args and that fds 3 and 4 have been opened for us
 	if (argc < 4) {
 		fprintf(stderr, "Usage: %s path_to_python memory_limit_bytes cpu_limit_secs\n", argv[0]);
 		goto cleanup;
 	}
 
-	ret = fcntl(3, F_GETFD);
+	ret = fcntl(PIPEIN, F_GETFD);
 	if (ret < 0) {
-		fprintf(stderr, "%s: Must be run as a child process with fds 3 and 4 opened.\n", argv[0]);
+		fprintf(stderr, "%s: Must be run as a child process with fd 3 opened.\n", argv[0]);
 		goto cleanup;
 	}
 	
-	ret = fcntl(4, F_GETFD);
+	ret = fcntl(PIPEOUT, F_GETFD);
 	if (ret < 0) {
-		fprintf(stderr, "%s: Must be run as a child process with fds 3 and 4 opened.\n", argv[0]);
+		fprintf(stderr, "%s: Must be run as a child process with fd 4 opened.\n", argv[0]);
+		goto cleanup;
+	}
+
+	ret = fcntl(URANDOM, F_GETFD);
+	if (ret < 0) {
+		fprintf(stderr, "%s: Must be run as a child process with fd 5 opened.\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -82,15 +98,20 @@ int main(int argc, char *argv[])
 	struct sigaction sa;
 	sigset_t mask;
 	sigfillset(&mask); // block all other signals while ours is running
+	// if the signal handler is trying to call a blocked syscall for some reason,
+	// comment the above line and uncomment the following line and the SA_NODEFER bit.
+	// This will cause the handler to spam out what syscall it is trying to call until the
+	// stack overflows and the program terminates.
+	//sigemptyset(&mask);
 	sa.sa_sigaction = report_bad_syscall;
 	sa.sa_mask = mask;
-	sa.sa_flags = SA_SIGINFO;
+	sa.sa_flags = SA_SIGINFO/* | SA_NODEFER*/;
 	sigaction(SIGSYS, &sa, NULL);
 	seccomp_action = SCMP_ACT_TRAP;
 #endif
 
 	// set up seccomp, we allow the following syscalls:
-	// read() - fd 3 only
+	// read() - fds 3 and 5 only (5 is /dev/urandom or something acting like it)
 	// write() - fd 4 only
 	// sigreturn(), rt_sigreturn() - needed for signal handlers
 	// brk(), mmap(), mmap2(), mremap(), munmap() - needed for memory allocation (malloc/free)
@@ -104,7 +125,23 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;
 
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 1, SCMP_A0(SCMP_CMP_EQ, URANDOM));
+	if (ret < 0)
+		goto cleanup;
+
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 1, SCMP_A0(SCMP_CMP_EQ, PIPEOUT));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(readv), 1, SCMP_A0(SCMP_CMP_EQ, PIPEIN));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(readv), 1, SCMP_A0(SCMP_CMP_EQ, URANDOM));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(writev), 1, SCMP_A0(SCMP_CMP_EQ, PIPEOUT));
 	if (ret < 0)
 		goto cleanup;
 
@@ -115,6 +152,14 @@ int main(int argc, char *argv[])
 		goto cleanup;
 
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 1, SCMP_A0(SCMP_CMP_EQ, 2));
+	if (ret < 0)
+		goto cleanup;	
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(writev), 1, SCMP_A0(SCMP_CMP_EQ, 1));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(writev), 1, SCMP_A0(SCMP_CMP_EQ, 2));
 	if (ret < 0)
 		goto cleanup;	
 #endif
@@ -241,6 +286,11 @@ void report_bad_syscall(int signal, siginfo_t *siginfo, void *void_ctx)
 		fprintf(stderr, "Bad syscall %s(%lld, %lld, %lld, %lld, %lld, %lld)\n",
 			name, SB_P1(ctx), SB_P2(ctx), SB_P3(ctx), SB_P4(ctx), SB_P5(ctx), SB_P6(ctx));
 	}
+	
+	fputs("Backtrace:\n", stderr);
+	void *buffer[32];
+	int n = backtrace(buffer, 32);
+	backtrace_symbols_fd(buffer, n, STDERR_FILENO);
 
 	exit(-SIGSYS);
 }
