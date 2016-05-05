@@ -84,11 +84,7 @@ class VirtualFS {
 	}
 
 	public function close( $fd ) {
-		if ( $fd >= 0 && $fd <= 5 ) {
-			throw new SyscallException( EPERM );
-		} elseif ( !isset( $this->fds[$fd] ) ) {
-			throw new SyscallException( EBADF );
-		}
+		$this->validateFd( $fd );
 
 		$this->fds[$fd]->close();
 		unset( $this->fds[$fd] );
@@ -98,12 +94,51 @@ class VirtualFS {
 		$maxlen = Configuration::singleton()->get( 'MaxReadLength' );
 		if ( $length > $maxlen ) {
 			throw new SyscallException( EIO );
-		} elseif ( $fd >= 0 && $fd <= 5 ) {
+		}
+		
+		$this->validateFd( $fd );	
+
+		return $this->fds[$fd]->read( $length );
+	}
+
+	public function validateFd( $fd, $allowSpecial = false ) {
+		if ( $fd >= 0 && $fd <= 5 ) {
+			if ( $allowSpecial ) {
+				// fds 0-5 validate for this
+				return;
+			}
+
 			throw new SyscallException( EPERM );
 		} elseif ( !isset( $this->fds[$fd] ) ) {
 			throw new SyscallException( EBADF );
 		}
+	}
 
-		return $this->fds[$fd]->read( $length );
+	public function dup( $oldFd, $newFd = 0, $exactFd = false ) {
+		$this->validateFd( $oldFd );
+
+		$maxfds = Configuration::singleton()->get( 'MaxFDs' );
+		if ( $newFd !== 0 && ( ( $newFd < 6 && $exactFd ) || $newFd >= $maxFds ) ) {
+			throw new SyscallException( EINVAL );
+		} elseif ( $newFd === 0 && $exactFd ) {
+			throw new SyscallException( EINVAL );
+		} elseif ( $newFd === 0 ) {
+			$newFd = 6;
+		}
+
+		if ( $exactFd && isset( $this->fds[$newFd] ) ) {
+			// this unsets $this->fds[$newFd] so that the loop below will work on the first
+			// iteration, so we don't need to do special handling for $exactFd below.
+			$this->close( $newFd );
+		}
+
+		for ( $i = $newFd; $i < $maxfds; ++$i ) {
+			if ( !isset( $this->fds[$i] ) ) {
+				$this->fds[$i] = &$this->fds[$oldFd];
+				return $i;
+			}
+		}
+
+		throw new SyscallException( EMFILE );
 	}
 }

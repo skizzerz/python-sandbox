@@ -97,6 +97,55 @@ class SyscallHandler {
 		return $this->sb->getfs()->open( $path, $flags, $mode );
 	}
 
+	public function sys__fcntl__2( $fd, $cmd ) {
+		switch ( $cmd ) {
+		case F_GETFD:
+			$this->sb->getfs()->validateFd( $fd, true );
+			return 0;
+		case F_GETFL:
+			return $this->sb->getfs()->getFlags( $fd );
+		case F_GETOWN:
+		case F_GETSIG:
+		case F_GETLEASE:
+		case F_GETPIPE_SZ:
+		case F_GET_SEALS:
+		default:
+			// invalid or unsupported $cmd
+			throw new SyscallException( EINVAL );
+		}
+	}
+
+	public function sys__fcntl__3( $fd, $cmd, $arg ) {
+		switch ( $cmd ) {
+		case F_DUPFD:
+		case F_DUPFD_CLOEXEC:
+			return $this->sb->getfs()->dup( $fd, $arg, /* exactFd */ false );
+		case F_SETFD:
+			$this->sb->getfs()->validateFd( $fd, true );
+			return 0;
+		case F_SETFL:
+			$this->sb->getfs()->setFlags( $fd, $arg );
+			return 0;
+		case F_SETLK:
+		case F_SETLKW:
+		case F_GETLK:
+		case F_OFD_SETLK:
+		case F_OFD_SETLKW:
+		case F_OFD_GETLK:
+		case F_SETOWN:
+		case F_GETOWN_EX:
+		case F_SETOWN_EX:
+		case F_SETSIG:
+		case F_SETLEASE:
+		case F_NOTIFY:
+		case F_SETPIPE_SZ:
+		case F_ADD_SEALS:
+		default:
+			// invalid or unsupported $cmd
+			throw new SyscallException( EINVAL );
+		}
+	}
+
 	public function sys__close__1( $fd ) {
 		$this->sb->getfs()->close( $fd );
 		return 0;
