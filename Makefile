@@ -1,6 +1,6 @@
 CC=/usr/bin/gcc
 # TODO: have a configure script to alter PYCONFIG in order to alter what python is used
-PYCONFIG=/usr/bin/python3-config
+PYCONFIG=/usr/bin/python3.5-config
 PKG_CONFIG=/usr/bin/pkg-config
 CFLAGS=$(shell $(PKG_CONFIG) --cflags json-c) $(shell $(PYCONFIG) --cflags)
 LDFLAGS=$(shell $(PKG_CONFIG) --libs json-c) $(shell $(PYCONFIG) --ldflags) -lseccomp

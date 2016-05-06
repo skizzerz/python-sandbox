@@ -17,6 +17,7 @@ const EROFS   = 30; // Read-only file system
 const ENOSYS  = 38; // Function not implemented
 const ELOOP   = 40; // Too many symbolic links encountered
 
+// file modes
 // these flags aren't necessarily the same across every OS
 // the below are valid for most if not all linuxes
 const O_RDONLY    = 000000000;
@@ -38,6 +39,9 @@ const O_CLOEXEC   = 002000000;
 const O_SYNC      = 004010000; // __O_SYNC | O_DSYNC
 const O_PATH      = 010000000;
 const O_TMPFILE   = 020200000; // __O_TMPFILE | O_DIRECTORY
+
+// file descriptor flags
+const FD_CLOEXEC = 1;
 
 // node permissions (files/directories)
 const S_IFMT   = 0170000; // bit mask for the file type bit field

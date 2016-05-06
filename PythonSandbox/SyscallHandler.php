@@ -100,10 +100,9 @@ class SyscallHandler {
 	public function sys__fcntl__2( $fd, $cmd ) {
 		switch ( $cmd ) {
 		case F_GETFD:
-			$this->sb->getfs()->validateFd( $fd, true );
-			return 0;
-		case F_GETFL:
 			return $this->sb->getfs()->getFlags( $fd );
+		case F_GETFL:
+			return $this->sb->getfs()->getMode( $fd );
 		case F_GETOWN:
 		case F_GETSIG:
 		case F_GETLEASE:
@@ -121,10 +120,10 @@ class SyscallHandler {
 		case F_DUPFD_CLOEXEC:
 			return $this->sb->getfs()->dup( $fd, $arg, /* exactFd */ false );
 		case F_SETFD:
-			$this->sb->getfs()->validateFd( $fd, true );
+			$this->sb->getfs()->setFlags( $fd, $arg );
 			return 0;
 		case F_SETFL:
-			$this->sb->getfs()->setFlags( $fd, $arg );
+			$this->sb->getfs()->setMode( $fd, $arg );
 			return 0;
 		case F_SETLK:
 		case F_SETLKW:

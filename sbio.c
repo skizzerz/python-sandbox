@@ -1,3 +1,5 @@
+// python is compiled with this sometimes, but it wreaks havoc here, so undef it
+#undef _FORTIFY_SOURCE
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
@@ -34,7 +36,7 @@ int ttyname_r(int fd, char *buf, size_t len)
 
 int __open(const char *pathname, int flags, ...)
 {
-	if (!strcmp("/dev/urandom", pathname)) {
+	if (!strcmp("/dev/urandom", pathname) && flags == O_RDONLY) {
 		// parent passes us a pipe to /dev/urandom which we allow reading from unsandboxed
 		return URANDOM;
 	}
@@ -55,7 +57,9 @@ int __open(const char *pathname, int flags, ...)
 	return trampoline(NULL, "open", numargs, arg1, arg2, arg3);
 }
 
-int open(const char *pathname, int flags, ...) __attribute__ ((alias ("__open")));
+int open(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open")));
+int __open_alias(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open")));
+int __open_2(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open")));
 
 int __open64(const char *pathname, int flags, ...)
 {
@@ -69,16 +73,15 @@ int __open64(const char *pathname, int flags, ...)
 	return __open(pathname, flags | O_LARGEFILE, mode);
 }
 
-int open64(const char *pathname, int flags, ...) __attribute__ ((alias ("__open64")));
+int open64(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open64")));
+int __open64_alias(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open64")));
+int __open64_2(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open64")));
 
 int __fcntl(int fd, int cmd, ...)
 {
 	va_list vargs;
 	int numargs = 2;
 	char arg3type = '\0';
-	json_object *arg1 = json_object_new_int(fd);
-	json_object *arg2 = json_object_new_int(cmd);
-	json_object *arg3 = NULL;
 
 	switch (cmd) {
 	case F_DUPFD:
@@ -113,6 +116,25 @@ int __fcntl(int fd, int cmd, ...)
 		arg3type = 'o'; // struct f_owner_ex *
 		break;
 	}
+
+	if (fd >= 0 && fd <= 5) {
+		int (*original_fcntl)(int, int, ...);
+		original_fcntl = dlsym(RTLD_NEXT, "fcntl");
+
+		if (numargs == 3) {
+			void *arg = NULL;
+			va_start(vargs, cmd);
+			arg = va_arg(vargs, void *);
+			va_end(vargs);
+			return (*original_fcntl)(fd, cmd, arg);
+		}
+
+		return (*original_fcntl)(fd, cmd);
+	}
+
+	json_object *arg1 = json_object_new_int(fd);
+	json_object *arg2 = json_object_new_int(cmd);
+	json_object *arg3 = NULL;
 
 	if (numargs == 3) {
 		va_start(vargs, cmd);

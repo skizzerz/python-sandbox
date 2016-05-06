@@ -5,8 +5,8 @@ namespace PythonSandbox;
 class RealFD extends FDBase {
 	protected $fh = null;
 
-	public function __construct( Node $node, $fh ) {
-		parent::__construct( $node );
+	public function __construct( Node $node, $fh, $mode ) {
+		parent::__construct( $node, $mode );
 		$this->fh = $fh;
 	}
 

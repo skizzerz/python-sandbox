@@ -14,7 +14,7 @@ class RealFile extends FileBase {
 		// TODO: use flags/mode somehow
 		$fh = fopen( $this->realpath, 'rt' );
 
-		return new RealFD( $this, $fh );
+		return new RealFD( $this, $fh, $flags );
 	}
 
 	public function stat() {

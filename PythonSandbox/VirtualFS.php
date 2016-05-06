@@ -17,6 +17,8 @@ class VirtualFS {
 		$this->root['lib'][] = new RealDir( $this, 'sandbox', $sbLib,
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
+		$this->root[] = new RealDir( $this, 'dev', '/dev',
+			[ 'fileWhitelist' => [ 'urandom '] ] );
 	}
 
 	protected function getNode( $path ) {
@@ -140,5 +142,27 @@ class VirtualFS {
 		}
 
 		throw new SyscallException( EMFILE );
+	}
+
+	public function getMode( $fd ) {
+		$this->validateFd( $fd );
+
+		return $this->fds[$fd]->getMode();
+	}
+
+	public function setMode( $fd, $mode ) {
+		$this->validateFd( $fd );
+		$this->fds[$fd]->setMode( $mode );
+	}
+
+	public function getFlags( $fd ) {
+		$this->validateFd( $fd );
+
+		return $this->fds[$fd]->getFlags();
+	}
+
+	public function setFlags( $fd, $flags ) {
+		$this->validateFd( $fd );
+		$this->fds[$fd]->setFlags( $flags );
 	}
 }

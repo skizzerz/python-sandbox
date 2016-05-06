@@ -17,7 +17,7 @@ class VirtualFile extends FileBase {
 
 	public function open( $flags, $mode ) {
 		// TODO: deny access if trying to open for writing
-		return new VirtualFD( $this );
+		return new VirtualFD( $this, $flags );
 	}
 
 	// Called by VirtualFD::read() so needs to be public

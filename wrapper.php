@@ -8,8 +8,8 @@ spl_autoload_register(function ($class) {
 });
 
 $IP = __DIR__;
-$pyBin = "$IP/python34/bin/python3";
-$pyLib = "$IP/python34/lib/python3.4";
+$pyBin = "$IP/python35/bin/python3";
+$pyLib = "$IP/python35/lib/python3.5";
 $sbLib = "$IP/lib";
 $sbBin = $IP;
 

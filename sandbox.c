@@ -145,6 +145,21 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;
 
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 2,
+			SCMP_A0(SCMP_CMP_EQ, PIPEIN), SCMP_A1(SCMP_CMP_EQ, F_GETFD));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 2,
+			SCMP_A0(SCMP_CMP_EQ, PIPEOUT), SCMP_A1(SCMP_CMP_EQ, F_GETFD));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 2,
+			SCMP_A0(SCMP_CMP_EQ, URANDOM), SCMP_A1(SCMP_CMP_EQ, F_GETFD));
+	if (ret < 0)
+		goto cleanup;
+
 #ifdef SB_DEBUG
 	// if debugging, allow sandbox to write to stdout and stderr
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(write), 1, SCMP_A0(SCMP_CMP_EQ, 1));
