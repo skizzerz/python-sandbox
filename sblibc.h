@@ -8,6 +8,10 @@ struct json_object;
 // it is the caller's responsibility to free it with json_object_put()
 extern int trampoline(struct json_object **out, const char *fname, int numargs, ...);
 extern void fatal(const char *msg) __attribute__ ((noreturn));
+extern int writejson(const char *json);
+extern int readjson(struct json_object **out);
+extern int readraw(const char *format, ...);
+extern int base64decode(const char *in, size_t inLen, unsigned char *out, size_t *outLen);
 
 // O_TMPFILE was added in kernel 3.11, some distros are still stuck on older versions
 // (for example, CentOS 7 is on 3.10). As such, ignore the flag

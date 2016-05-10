@@ -18,7 +18,7 @@ class VirtualFS {
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
 		$this->root[] = new RealDir( $this, 'dev', '/dev',
-			[ 'fileWhitelist' => [ 'urandom '] ] );
+			[ 'fileWhitelist' => [ 'urandom' ] ] );
 	}
 
 	protected function getNode( $path ) {
@@ -59,7 +59,7 @@ class VirtualFS {
 	public function open( $path, $flags, $mode ) {
 		$node = $this->getNode( $path );
 
-		if ($node === null) {
+		if ( $node === null ) {
 			// file does not exist, if write requested throw EROFS instead of ENOENT
 			if ( ( $flags & O_CREAT ) && ( $mode & 0222 ) ) {
 				throw new SyscallException( EROFS );
@@ -75,7 +75,7 @@ class VirtualFS {
 		}
 
 		$maxfds = Configuration::singleton()->get( 'MaxFDs' );
-		for ( $i = 6; $i < $maxfds; ++$i ) {
+		for ( $i = 5; $i < $maxfds; ++$i ) {
 			if ( !isset( $this->fds[$i] ) ) {
 				$this->fds[$i] = $node->open( $flags, $mode );
 				return $i;
@@ -92,6 +92,32 @@ class VirtualFS {
 		unset( $this->fds[$fd] );
 	}
 
+	public function stat( $path ) {
+		$node = $this->getNode( $path );
+
+		if ( $node === null ) {
+			throw new SyscallException( ENOENT );
+		}
+
+		return new StatResult( $node->stat() );
+	}
+
+	public function fstat( $fd ) {
+		$this->validateFd( $fd );
+
+		return new StatResult( $this->fds[$fd]->stat() );
+	}
+
+	public function access( $path, $mode ) {
+		$node = $this->getNode( $path );
+
+		if ( $node === null ) {
+			throw new SyscallException( ENOENT );
+		}
+
+		return $node->access( $mode );
+	}
+
 	public function read( $fd, $length ) {
 		$maxlen = Configuration::singleton()->get( 'MaxReadLength' );
 		if ( $length > $maxlen ) {
@@ -103,13 +129,8 @@ class VirtualFS {
 		return $this->fds[$fd]->read( $length );
 	}
 
-	public function validateFd( $fd, $allowSpecial = false ) {
-		if ( $fd >= 0 && $fd <= 5 ) {
-			if ( $allowSpecial ) {
-				// fds 0-5 validate for this
-				return;
-			}
-
+	public function validateFd( $fd ) {
+		if ( $fd >= 0 && $fd <= 4 ) {
 			throw new SyscallException( EPERM );
 		} elseif ( !isset( $this->fds[$fd] ) ) {
 			throw new SyscallException( EBADF );
@@ -120,12 +141,12 @@ class VirtualFS {
 		$this->validateFd( $oldFd );
 
 		$maxfds = Configuration::singleton()->get( 'MaxFDs' );
-		if ( $newFd !== 0 && ( ( $newFd < 6 && $exactFd ) || $newFd >= $maxFds ) ) {
+		if ( $newFd !== 0 && ( ( $newFd < 5 && $exactFd ) || $newFd >= $maxFds ) ) {
 			throw new SyscallException( EINVAL );
 		} elseif ( $newFd === 0 && $exactFd ) {
 			throw new SyscallException( EINVAL );
 		} elseif ( $newFd === 0 ) {
-			$newFd = 6;
+			$newFd = 5;
 		}
 
 		if ( $exactFd && isset( $this->fds[$newFd] ) ) {

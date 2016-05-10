@@ -52,4 +52,14 @@ class VirtualFile extends FileBase {
 			'blocks' => $nblocks
 		];
 	}
+
+	public function access( $mode ) {
+		if ( $mode & ~7 ) {
+			throw new SyscallException( EINVAL );
+		} elseif ( $mode & 3 ) {
+			return false
+		}
+
+		return true;
+	}
 }

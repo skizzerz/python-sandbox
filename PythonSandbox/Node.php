@@ -26,6 +26,7 @@ abstract class Node {
 
 	abstract public function open( $flags, $mode );
 	abstract public function stat();
+	abstract public function access( $mode );
 
 	public function exists() {
 		return true;

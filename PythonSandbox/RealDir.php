@@ -34,14 +34,6 @@ class RealDir extends DirBase {
 			return parent::getChild( $name );
 		}
 
-		static $x = 0;
-		if ( ++$x == 5 ) {
-			$bt = debug_backtrace();
-			foreach ( $bt as $l ) {
-				echo "$l[class]::$l[function] at $l[file] ($l[line])\n";
-			}
-			exit;
-		}
 		$di = scandir( $this->realpath );
 		foreach ( $di as $item ) {
 			if ( $item === '.' || $item === '..' || $item !== $name ) {
@@ -110,6 +102,16 @@ class RealDir extends DirBase {
 
 	public function stat() {
 		return stat( $this->realpath );
+	}
+
+	public function access( $mode ) {
+		if ( $mode & ~7 ) {
+			throw new SyscallException( EINVAL );
+		} elseif ( $mode & 2 ) {
+			return false;
+		}
+		
+		return posix_access( $this->realpath, $mode );
 	}
 
 	public function exists() {

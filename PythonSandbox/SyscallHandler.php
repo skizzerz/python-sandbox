@@ -34,7 +34,6 @@ class SyscallHandler {
 
 			$line = fgets( $this->rpipe );
 			if ( $line === false ) {
-				echo "Broken pipe.\n";
 				break;
 			}
 
@@ -44,8 +43,15 @@ class SyscallHandler {
 			if ( $call === null || !isset( $call->name ) || !isset( $call->args ) || !is_array( $call->args ) ) {
 				echo "Invalid JSON.\n";
 				break;
+			} elseif( !preg_match( '/^[a-z0-9_]{1,32}$/', $call->name ) ) {
+				// paranoia check. Just in case there's some weird exploit with Reflection that could allow
+				// a carefully crafted method name to call arbitrary code, we ensure that whatever name
+				// we receive will form a valid PHP method name.
+				echo "Invalid syscall name.\n";
+				break;
 			}
 
+			$raw = isset( $call->raw ) && $call->raw;
 			$nargs = count( $call->args );
 			$method = "sys__{$call->name}__{$nargs}";
 			if ( $self->hasMethod( $method ) ) {
@@ -64,11 +70,36 @@ class SyscallHandler {
 					$data = $e->getMessage();
 				}
 
-				$ret = json_encode( [
-					'code' => $ret,
-					'errno' => $errno,
-					'data' => $data
+				if ( $raw ) {
+					if ( $data instanceOf StatResult ) {
+						$ret = "$ret $errno {$data->getRaw()}";
+					} else {
+						$data = base64_encode( $data );
+						$ret = "$ret $errno $data";
+					}
+				} else {
+					if ( $data instanceOf StatResult ) {
+						$data = $data->getArray();
+					}
+
+					$json = json_encode( [
+						'code' => $ret,
+						'errno' => $errno,
+						'data' => $data
 					] );
+
+					if ( $json === false ) {
+						// $data is a binary string
+						$json = json_encode( [
+							'code' => $ret,
+							'errno' => $errno,
+							'data' => base64_encode( $data ),
+							'base64' => true
+						] );
+					}
+
+					$ret = $json;
+				}
 
 				echo ">>> $ret\n";
 
@@ -148,5 +179,43 @@ class SyscallHandler {
 	public function sys__close__1( $fd ) {
 		$this->sb->getfs()->close( $fd );
 		return 0;
+	}
+
+	public function sys__read__2( $fd, $length ) {
+		$str = $this->sb->getfs()->read( $fd, $length );
+		return [ strlen( $str ), $str ];
+	}
+
+	public function sys__stat__1( $path ) {
+		$res = $this->sb->getfs()->stat( $path );
+		return [ 0, $res ];
+	}
+
+	public function sys__fstat__1( $fd ) {
+		switch ( $fd ) {
+		case 0:
+			$res = new StatResult( fstat( STDIN ) );
+			break;
+		case 1:
+			$res = new StatResult( fstat( STDOUT ) );
+			break;
+		case 2:
+			$res = new StatResult( fstat( STDERR ) );
+			break;
+		default:
+			$res = $this->sb->getfs()->fstat( $fd );
+			break;
+		}
+
+		return [ 0, $res ];
+	}
+
+	public function sys__readlink__1( $path ) {
+		if ( !$this->sb->getfs()->access( $path, POSIX_F_OK ) ) {
+			throw new SyscallException( ENOENT );
+		}
+
+		// our virtualized fs does not support symlinks
+		throw new SyscallException( EINVAL, 'The named file is not a symbolic link.' );
 	}
 }

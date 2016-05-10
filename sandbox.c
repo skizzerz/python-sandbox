@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
 #include <ucontext.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -56,12 +57,6 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	ret = fcntl(URANDOM, F_GETFD);
-	if (ret < 0) {
-		fprintf(stderr, "%s: Must be run as a child process with fd 5 opened.\n", argv[0]);
-		goto cleanup;
-	}
-
 	mem_limit = strtoul(argv[2], NULL, 10);
 	cpu_limit = strtoul(argv[3], NULL, 10);
 
@@ -110,22 +105,24 @@ int main(int argc, char *argv[])
 	seccomp_action = SCMP_ACT_TRAP;
 #endif
 
-	// set up seccomp, we allow the following syscalls:
-	// read() - fds 3 and 5 only (5 is /dev/urandom or something acting like it)
-	// write() - fd 4 only
-	// sigreturn(), rt_sigreturn() - needed for signal handlers
-	// brk(), mmap(), mmap2(), mremap(), munmap() - needed for memory allocation (malloc/free)
-	// exit(), exit_group() - so program can terminate
+	/* set up seccomp, we allow the following syscalls:
+	 * IO:
+	 * - read(), readv() - fd 3 only
+	 * - write(), writev() - fd 4 only (also stdout and stderr if in debug mode)
+	 * - fstat(), fcntl(F_GETFD), fcntl(F_GETFL) - fds 3 and 4 only
+	 * Memory:
+	 * - mmap(NULL, MAP_ANONYMOUS) - new mappings that don't read from fds, kernel chooses address
+	 * - brk() - memory allocation (we have setrlimit to keep this in check)
+	 * Misc:
+	 * - sigreturn(), rt_sigreturn() - needed for signal handlers
+	 * - exit(), exit_group() - so program can terminate
+	 */
 	ctx = seccomp_init(seccomp_action);
 
 	if (ctx == NULL)
 		goto cleanup;
 
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 1, SCMP_A0(SCMP_CMP_EQ, PIPEIN));
-	if (ret < 0)
-		goto cleanup;
-
-	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(read), 1, SCMP_A0(SCMP_CMP_EQ, URANDOM));
 	if (ret < 0)
 		goto cleanup;
 
@@ -137,11 +134,15 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;
 
-	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(readv), 1, SCMP_A0(SCMP_CMP_EQ, URANDOM));
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(writev), 1, SCMP_A0(SCMP_CMP_EQ, PIPEOUT));
 	if (ret < 0)
 		goto cleanup;
 
-	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(writev), 1, SCMP_A0(SCMP_CMP_EQ, PIPEOUT));
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 1, SCMP_A0(SCMP_CMP_EQ, PIPEIN));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fstat), 1, SCMP_A0(SCMP_CMP_EQ, PIPEOUT));
 	if (ret < 0)
 		goto cleanup;
 
@@ -156,7 +157,12 @@ int main(int argc, char *argv[])
 		goto cleanup;
 
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 2,
-			SCMP_A0(SCMP_CMP_EQ, URANDOM), SCMP_A1(SCMP_CMP_EQ, F_GETFD));
+			SCMP_A0(SCMP_CMP_EQ, PIPEIN), SCMP_A1(SCMP_CMP_EQ, F_GETFL));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(fcntl), 2,
+			SCMP_A0(SCMP_CMP_EQ, PIPEOUT), SCMP_A1(SCMP_CMP_EQ, F_GETFL));
 	if (ret < 0)
 		goto cleanup;
 
@@ -178,6 +184,15 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;	
 #endif
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 2,
+			SCMP_A0(SCMP_CMP_EQ, NULL), SCMP_A3(SCMP_CMP_MASKED_EQ, MAP_ANONYMOUS, MAP_ANONYMOUS));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(brk), 0);
+	if (ret < 0)
+		goto cleanup;
 
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sigreturn), 0);
 	if (ret < 0)
@@ -280,19 +295,31 @@ void report_bad_syscall(int signal, siginfo_t *siginfo, void *void_ctx)
 				fprintf(stderr, "\"%s\"", (const char *)args[j]);
 				break;
 			case 'd':
-				fprintf(stderr, "%lld", (long long int)args[j]);
+				fprintf(stderr, "%d", (int32_t)args[j]);
 				break;
 			case 'x':
-				fprintf(stderr, "0x%llx", (unsigned long long int)args[j]);
+				fprintf(stderr, "0x%x", (uint32_t)args[j]);
 				break;
 			case 'o':
-				fprintf(stderr, "0%llo", (unsigned long long int)args[j]);
+				fprintf(stderr, "0%o", (uint32_t)args[j]);
 				break;
 			case 'u':
-				fprintf(stderr, "%llu", (unsigned long long int)args[j]);
+				fprintf(stderr, "%u", (uint32_t)args[j]);
 				break;
 			case 'f':
 				fprintf(stderr, "%f", (double)args[j]);
+				break;
+			case 'D':
+				fprintf(stderr, "%ld", (int64_t)args[j]);
+				break;
+			case 'X':
+				fprintf(stderr, "0x%lx", (uint64_t)args[j]);
+				break;
+			case 'O':
+				fprintf(stderr, "0%lo", (uint64_t)args[j]);
+				break;
+			case 'U':
+				fprintf(stderr, "%lu", (uint64_t)args[j]);
 				break;
 			}
 		}

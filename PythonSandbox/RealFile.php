@@ -21,6 +21,19 @@ class RealFile extends FileBase {
 		return stat( $this->realpath );
 	}
 
+	public function access( $mode ) {
+		if ( $mode & ~7 ) {
+			throw new SyscallException( EINVAL );
+		} elseif ( $mode & 2 ) {
+			// VirtualFile does not set the execute bit however we want to test
+			// for the real +x in RealFile because some things may care if a file
+			// is executable or not even if it has no ability to actually execute it.
+			return false;
+		}
+		
+		return posix_access( $this->realpath, $mode );
+	}
+
 	public function exists() {
 		return is_file( $this->realpath );
 	}

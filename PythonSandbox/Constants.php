@@ -2,6 +2,10 @@
 
 namespace PythonSandbox;
 
+// uid/gid of the sandbox (fake)
+const SB_UID = 1000;
+const SB_GID = 1000;
+
 // errno constants
 const EPERM   = 1;  // Operation not permitted
 const ENOENT  = 2;  // No such file or directory

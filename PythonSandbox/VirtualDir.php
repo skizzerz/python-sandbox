@@ -30,4 +30,14 @@ class VirtualDir extends DirBase {
 			'blocks' => 0
 		];
 	}
+
+	public function access( $mode ) {
+		if ( $mode & ~7 ) {
+			throw new SyscallException( EINVAL );
+		} elseif ( $mode & 2 ) {
+			return false;
+		}
+
+		return true;
+	}
 }

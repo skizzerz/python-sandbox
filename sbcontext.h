@@ -5,7 +5,6 @@
 // fds for our input and output, opened by the parent proc
 #define PIPEIN 3
 #define PIPEOUT 4
-#define URANDOM 5
 
 // default resource usage limits by sandbox, 64 MiB of memory and 5 seconds of cpu time
 // these can be modified (increased or decreased) by argv params
