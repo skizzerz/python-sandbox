@@ -14,6 +14,7 @@ const EBADF   = 9;  // Bad file number
 const EACCES  = 13; // Permission denied
 const EEXIST  = 17; // File exists
 const ENOTDIR = 20; // Not a directory
+const EISDIR  = 21; // Is a directory
 const EINVAL  = 22; // Invalid argument
 const EMFILE  = 24; // Too many open files
 const ENOSPC  = 28; // No space left on device
@@ -46,6 +47,9 @@ const O_TMPFILE   = 020200000; // __O_TMPFILE | O_DIRECTORY
 
 // file descriptor flags
 const FD_CLOEXEC = 1;
+
+// openat stuff
+const AT_FDCWD = -100;
 
 // node permissions (files/directories)
 const S_IFMT   = 0170000; // bit mask for the file type bit field

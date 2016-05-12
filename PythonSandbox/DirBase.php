@@ -27,10 +27,6 @@ abstract class DirBase extends Node implements \ArrayAccess, \Iterator {
 		return parent::getPermissions() | 0111;
 	}
 
-	public function open( $flags, $mode ) {
-		throw new SyscallException( EISDIR );
-	}
-
 	protected function childExists( $name ) {
 		return isset( $this->nodes[$name] );
 	}

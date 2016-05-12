@@ -13,7 +13,7 @@ class VirtualFS {
 		$this->root['bin'][] = new RealFile( $this, 'python', $pyBin );
 		$this->root[] = new VirtualDir( $this, 'lib' );
 		$this->root['lib'][] = new RealDir( $this, 'python', $pyLib,
-			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
+			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root['lib'][] = new RealDir( $this, 'sandbox', $sbLib,
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
@@ -21,9 +21,14 @@ class VirtualFS {
 			[ 'fileWhitelist' => [ 'urandom' ] ] );
 	}
 
-	protected function getNode( $path ) {
+	protected function getNode( $path, $base = AT_FDCWD ) {
 		if ( $path[0] !== '/' ) {
-			$path = $this->cwd . '/' . $path;
+			if ( $base === AT_FDCWD ) {
+				$path = $this->cwd . '/' . $path;
+			} else {
+				$this->validateFd( $base );
+				$path = $this->fds[$base]->getNode()->getPath() . '/' . $path;
+			}
 		}
 
 		$pp = explode( '/', $path );
@@ -43,7 +48,7 @@ class VirtualFS {
 
 		// $path is now normalized into an absolute virtual path (all ./ and ../ resolved)
 		$node = $this->root;
-		foreach ($np as $p) {
+		foreach ( $np as $p ) {
 			if ( !( $node instanceOf DirBase ) ) {
 				throw new SyscallException( ENOTDIR );
 			} elseif ( isset( $node[$p] ) ) {
@@ -56,8 +61,8 @@ class VirtualFS {
 		return $node;
 	}
 
-	public function open( $path, $flags, $mode ) {
-		$node = $this->getNode( $path );
+	public function open( $path, $flags, $mode, $base ) {
+		$node = $this->getNode( $path, $base );
 
 		if ( $node === null ) {
 			// file does not exist, if write requested throw EROFS instead of ENOENT
@@ -163,6 +168,12 @@ class VirtualFS {
 		}
 
 		throw new SyscallException( EMFILE );
+	}
+
+	public function getdents( $fd, $bufsize, $structBytes ) {
+		$this->validateFd( $fd );
+
+		return $this->fds[$fd]->getdents( $bufsize, $structBytes );
 	}
 
 	public function getMode( $fd ) {

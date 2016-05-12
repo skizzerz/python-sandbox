@@ -20,6 +20,14 @@ abstract class FDBase {
 	abstract public function stat();
 	abstract public function close();
 
+	public function getdents( $bufsize, $structBytes ) {
+		throw new SyscallException( ENOTDIR );
+	}
+
+	public function getNode() {
+		return $this->node;
+	}
+
 	public function getMode() {
 		return $this->fileFlags;
 	}

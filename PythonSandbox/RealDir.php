@@ -100,6 +100,14 @@ class RealDir extends DirBase {
 		return null;
 	}
 
+	public function open( $flags, $mode ) {
+		if ( $flags & O_DIRECTORY !== O_DIRECTORY ) {
+			throw new SyscallException( EISDIR );
+		}
+
+		return new DirFD( $this, $this->realpath, $flags );
+	}
+
 	public function stat() {
 		return stat( $this->realpath );
 	}

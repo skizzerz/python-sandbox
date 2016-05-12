@@ -115,17 +115,44 @@ class SyscallHandler {
 				fprintf( $this->wpipe, "%s\n", $ret );
 			} else {
 				echo "No such method $method.\n";
+				// Eventually we'll remove this return, but quitting early makes development faster
 				return;
+
+				$ret = json_encode( [
+					'code' => -1,
+					'errno' => ENOSYS
+				] );
+
+				echo ">>> $ret\n";
+
+				$r = [];
+				$w = [ $this->wpipe ];
+				$x = [];
+
+				if ( !stream_select( $r, $w, $x, 5 ) ) {
+					echo "Write timeout.\n";
+					break;
+				}
+
+				fprintf( $this->wpipe, "%s\n", $ret );
 			}
 		}
 	}
 
 	public function sys__open__2( $path, $flags ) {
-		return $this->sb->getfs()->open( $path, $flags, 0 );
+		return $this->sb->getfs()->open( $path, $flags, 0, AT_FDCWD );
 	}
 
 	public function sys__open__3( $path, $flags, $mode ) {
-		return $this->sb->getfs()->open( $path, $flags, $mode );
+		return $this->sb->getfs()->open( $path, $flags, $mode, AT_FDCWD );
+	}
+
+	public function sys__openat__3( $fd, $path, $flags ) {
+		return $this->sb->getfs()->open( $path, $flags, 0, $fd );
+	}
+
+	public function sys__openat__4( $fd, $path, $flags, $mode ) {
+		return $this->sb->getfs()->open( $path, $flags, $mode, $fd );
 	}
 
 	public function sys__fcntl__2( $fd, $cmd ) {
@@ -217,5 +244,14 @@ class SyscallHandler {
 
 		// our virtualized fs does not support symlinks
 		throw new SyscallException( EINVAL, 'The named file is not a symbolic link.' );
+	}
+
+	public function sys__getdents__3( $fd, $bufsize, $structBytes ) {
+		$arr = $this->sb->getfs()->getdents( $fd, $bufsize, $structBytes );
+
+		// the real getdents() syscall returns bytes whereas we report array size
+		// the child sandbox will correctly compute the actual return value, and only
+		// uses ours to check for error (below 0), end of directory (0), or data (above zero).
+		return [ count( $arr ), $arr ];
 	}
 }

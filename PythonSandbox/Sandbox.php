@@ -24,8 +24,8 @@ class Sandbox {
 			'PYTHONPATH' => '/lib/sandbox',
 			'PYTHONDONTWRITEBYTECODE' => '1',
 			'PYTHONNOUSERSITE' => '1',
+			'PYTHONFAULTHANDLER' => '',
 			'PATH' => '/bin',
-			'LD_PRELOAD' => "$sbBinPath/sblibc.so"
 		];
 	}
 

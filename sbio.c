@@ -12,33 +12,19 @@
 #include <errno.h>
 #include <sys/cdefs.h>
 #include <signal.h>
+#include <dirent.h>
 
 #include "sbcontext.h"
 #include "sblibc.h"
 
 static int urandom_fd = -1;
 
-// pretend that we are not a tty even if we might be
-// (ensures a consistent environment between testing and production)
-int isatty(int fd)
+SYS(open)
 {
-	errno = EINVAL;
-	return 0;
-}
+	const char *pathname = va_arg(args, const char *);
+	int flags = va_arg(args, int);
+	int mode = va_arg(args, int);
 
-char *ttyname(int fd)
-{
-	errno = ENOTTY;
-	return NULL;
-}
-
-int ttyname_r(int fd, char *buf, size_t len)
-{
-	return ENOTTY;
-}
-
-int __open(const char *pathname, int flags, ...)
-{
 	if (!strcmp("/dev/urandom", pathname) && flags == O_RDONLY) {
 		if (urandom_fd > -1) {
 			return urandom_fd;
@@ -63,45 +49,22 @@ int __open(const char *pathname, int flags, ...)
 		return urandom_fd;
 	}
 
-	va_list vargs;
 	int numargs = 2;
 	json_object *arg1 = json_object_new_string(pathname);
 	json_object *arg2 = json_object_new_int(flags);
 	json_object *arg3 = NULL;
 
 	if (flags & (O_CREAT | O_TMPFILE)) {
-		numargs = 3;
-		va_start(vargs, flags);
-		arg3 = json_object_new_int(va_arg(vargs, int));
-		va_end(vargs);
+		arg3 = json_object_new_int(mode);
 	}
 
 	return trampoline(NULL, "open", numargs, arg1, arg2, arg3);
 }
 
-int open(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open")));
-int __open_alias(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open")));
-int __open_2(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open")));
-
-int __open64(const char *pathname, int flags, ...)
+SYS(fcntl)
 {
-	int mode;
-	va_list vargs;
-
-	va_start(vargs, flags);
-	mode = va_arg(vargs, int);
-	va_end(vargs);
-
-	return __open(pathname, flags | O_LARGEFILE, mode);
-}
-
-int open64(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open64")));
-int __open64_alias(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open64")));
-int __open64_2(const char *pathname, int flags, ...) __attribute__ ((weak, alias ("__open64")));
-
-int __fcntl(int fd, int cmd, ...)
-{
-	va_list vargs;
+	int fd = va_arg(args, int);
+	int cmd = va_arg(args, int);
 	int numargs = 2;
 	char arg3type = '\0';
 
@@ -139,34 +102,18 @@ int __fcntl(int fd, int cmd, ...)
 		break;
 	}
 
-	if (fd >= 0 && fd <= 4) {
-		int (*original_fcntl)(int, int, ...);
-		original_fcntl = dlsym(RTLD_NEXT, "fcntl");
-
-		if (numargs == 3) {
-			void *arg = NULL;
-			va_start(vargs, cmd);
-			arg = va_arg(vargs, void *);
-			va_end(vargs);
-			return (*original_fcntl)(fd, cmd, arg);
-		}
-
-		return (*original_fcntl)(fd, cmd);
-	}
-
 	json_object *arg1 = json_object_new_int(fd);
 	json_object *arg2 = json_object_new_int(cmd);
 	json_object *arg3 = NULL;
 
 	if (numargs == 3) {
-		va_start(vargs, cmd);
 		switch (arg3type) {
 		case 'i':
-			arg3 = json_object_new_int(va_arg(vargs, int));
+			arg3 = json_object_new_int(va_arg(args, int));
 			break;
 		case 'l':
 		{
-			struct flock *fl = va_arg(vargs, struct flock *);
+			struct flock *fl = va_arg(args, struct flock *);
 			arg3 = json_object_new_object();
 
 			json_object *l_type = json_object_new_int(fl->l_type);
@@ -184,7 +131,7 @@ int __fcntl(int fd, int cmd, ...)
 		}
 		case 'o':
 		{
-			struct f_owner_ex *fo = va_arg(vargs, struct f_owner_ex *);
+			struct f_owner_ex *fo = va_arg(args, struct f_owner_ex *);
 			arg3 = json_object_new_object();
 
 			json_object *type = json_object_new_int(fo->type);
@@ -195,16 +142,15 @@ int __fcntl(int fd, int cmd, ...)
 			break;
 		}
 		}
-		va_end(vargs);
 	}
 
 	return trampoline(NULL, "fcntl", numargs, arg1, arg2, arg3);
 }
 
-int fcntl(int fd, int cmd, ...) __attribute__ ((weak, alias ("__fcntl")));
-
-int close(int fd)
+SYS(close)
 {
+	int fd = va_arg(args, int);
+
 	if (fd == urandom_fd) {
 		char buf[64] = {0};
 		int ret = 0;
@@ -233,8 +179,12 @@ int close(int fd)
 	return trampoline(NULL, "close", 1, arg1);
 }
 
-ssize_t read(int fd, void *buf, size_t count)
+SYS(read)
 {
+	int fd = va_arg(args, int);
+	void *buf = va_arg(args, void *);
+	size_t count = va_arg(args, size_t);
+
 	int code = 0;
 	int ret = 0;
 
@@ -308,7 +258,7 @@ ssize_t read(int fd, void *buf, size_t count)
 	return code;
 }
 
-int __xstat(int ver, const char *path, struct stat *buf)
+SYS(stat)
 {
 #define ST_GET(type, field) if (!json_object_object_get_ex(data, #field, &fld)) {\
 								debug_error("data." #field " expected\n");\
@@ -319,10 +269,8 @@ int __xstat(int ver, const char *path, struct stat *buf)
 								exit(EPROTO);\
 							}\
 							buf->field = (type)json_object_get_int64(fld)
-	if (ver != _STAT_VER) {
-		errno = EINVAL;
-		return -1;
-	}
+	const char *path = va_arg(args, const char *);
+	struct stat *buf = va_arg(args, struct stat *);
 
 	int ret = 0;
 	int code = 0;
@@ -419,14 +367,10 @@ int __xstat(int ver, const char *path, struct stat *buf)
 	return ret;
 }
 
-int __xstat64(int ver, const char *path, struct stat *buf) __attribute__ ((weak, alias ("__xstat")));
-
-int __fxstat(int ver, int fd, struct stat *buf)
+SYS(fstat)
 {
-	if (ver != _STAT_VER) {
-		errno = EINVAL;
-		return -1;
-	}
+	int fd = va_arg(args, int);
+	struct stat *buf = va_arg(args, struct stat *);
 
 	int ret = 0;
 	json_object *arg1 = json_object_new_int(fd);
@@ -501,10 +445,12 @@ int __fxstat(int ver, int fd, struct stat *buf)
 	return ret;
 }
 
-int __fxstat64(int ver, int fd, struct stat *buf) __attribute__ ((weak, alias ("__fxstat")));
-
-ssize_t readlink(const char *path, char *buf, size_t bufsiz)
+SYS(readlink)
 {
+	const char *path = va_arg(args, const char *);
+	char *buf = va_arg(args, char *);
+	size_t bufsiz = va_arg(args, size_t);
+
 	int ret = 0, len = 0;
 	json_object *arg1 = json_object_new_string(path);
 	json_object *out = NULL;
@@ -541,4 +487,142 @@ ssize_t readlink(const char *path, char *buf, size_t bufsiz)
 
 	memcpy(buf, str, len);
 	return ret;
+}
+
+SYS(openat)
+{
+	int dirfd = va_arg(args, int);
+	const char *pathname = va_arg(args, const char *);
+	int flags = va_arg(args, int);
+	int mode = va_arg(args, int);
+
+	
+	int numargs = 3;
+	json_object *arg1 = json_object_new_int(dirfd);
+	json_object *arg2 = json_object_new_string(pathname);
+	json_object *arg3 = json_object_new_int(flags);
+	json_object *arg4 = NULL;
+
+	if (flags & (O_CREAT | O_TMPFILE)) {
+		arg4 = json_object_new_int(mode);
+	}
+
+	return trampoline(NULL, "openat", numargs, arg1, arg2, arg3, arg4);
+}
+
+struct linux_dirent {
+	unsigned long d_ino;
+	unsigned long d_off;
+	unsigned short d_reclen;
+	char d_name[];
+	/* these fields are at the end of d_name
+	char pad;
+	char d_type;
+	*/
+};
+
+SYS(getdents)
+{
+	unsigned int fd = va_arg(args, unsigned int);
+	char *dirp = va_arg(args, char *);
+	unsigned int count = va_arg(args, unsigned int);
+
+	// size of the struct not counting the name, we pass this along
+	// so the parent side can calculate how many strings it can pass
+	size_t misc = offsetof(struct linux_dirent, d_name) + 2;
+	int ret, i, off = 0;
+	const char *name;
+	struct linux_dirent *d = NULL;
+
+	json_object *arg1 = json_object_new_int64(fd);
+	json_object *arg2 = json_object_new_int64(count);
+	json_object *arg3 = json_object_new_int64(misc);
+	json_object *out = NULL;
+	json_object *data = NULL;
+	json_object *obj = NULL;
+	json_object *fld = NULL;
+
+	ret = trampoline(&out, "getdents", 3, arg1, arg2, arg3);
+	if (ret <= 0) {
+		json_object_put(out);
+		return ret;
+	}
+
+	if (!json_object_object_get_ex(out, "data", &data)) {
+		debug_error("data expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(data, json_type_array)) {
+		debug_error("data is not an array\n");
+		exit(EPROTO);
+	}
+
+	int len = json_object_array_length(data);
+	if (len == 0) {
+		debug_error("0 length array but nonzero return value\n");
+		exit(EPROTO);
+	}
+
+	for (i = 0; i < len; ++i) {
+		d = (struct linux_dirent *)(dirp + off);
+		obj = json_object_array_get_idx(data, i);
+		if (!json_object_is_type(obj, json_type_object)) {
+			debug_error("array member not an object\n");
+			exit(EPROTO);
+		}
+
+		if (!json_object_object_get_ex(obj, "d_ino", &fld)) {
+			debug_error("missing field d_ino\n");
+			exit(EPROTO);
+		}
+
+		if (!json_object_is_type(fld, json_type_int)) {
+			debug_error("d_ino is not an int\n");
+			exit(EPROTO);
+		}
+
+		d->d_ino = (unsigned int)json_object_get_int(fld);
+
+		if (!json_object_object_get_ex(obj, "d_name", &fld)) {
+			debug_error("missing field d_name\n");
+			exit(EPROTO);
+		}
+
+		if (!json_object_is_type(fld, json_type_string)) {
+			debug_error("d_name is not a string\n");
+			exit(EPROTO);
+		}
+
+		name = json_object_get_string(fld);
+		d->d_reclen = misc + json_object_get_string_len(fld);
+		d->d_off = off + d->d_reclen;
+		if (d->d_off > count) {
+			// this indicates a bug in the parent process, it
+			// should not return more data than fits in our buffer
+			debug_error("getdents() buffer overflow\n");
+			exit(EPROTO);
+		}
+
+		// strcpy fills in the "pad" byte as well
+		strcpy(d->d_name, name);
+
+		if (!json_object_object_get_ex(obj, "d_type", &fld)) {
+			debug_error("missing field d_type\n");
+			exit(EPROTO);
+		}
+
+		if (!json_object_is_type(fld, json_type_int)) {
+			debug_error("d_type is not an int\n");
+			exit(EPROTO);
+		}
+
+		// fill in the d_type field
+		*(dirp + d->d_off - 1) = (char)json_object_get_int(fld);
+
+		off = d->d_off;
+	}
+
+	json_object_put(out);
+	return d->d_off;
 }

@@ -10,6 +10,15 @@ class VirtualDir extends DirBase {
 		$this->inode = rand();
 	}
 
+	public function open( $flags, $mode ) {
+		// TODO: do more checking on flags to ensure they're sane
+		if ( $flags & O_DIRECTORY !== O_DIRECTORY ) {
+			throw new SyscallException( EISDIR );
+		}
+
+		return new VirtualFD( $this, $flags );
+	}
+
 	public function stat() {
 		$time = time();
 		$mode = S_IFDIR | $this->getPermissions();

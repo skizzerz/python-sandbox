@@ -5,22 +5,19 @@ PKG_CONFIG=/usr/bin/pkg-config
 CFLAGS=$(shell $(PKG_CONFIG) --cflags json-c) $(shell $(PYCONFIG) --cflags)
 LDFLAGS=$(shell $(PKG_CONFIG) --libs json-c) $(shell $(PYCONFIG) --ldflags) -lseccomp
 
-all: sandbox sblibc.so
+all: sandbox
 
-sandbox: sandbox.o
-	$(CC) -o sandbox sandbox.o $(LDFLAGS)
+sandbox: sandbox.o sblibc.o sbio.o
+	$(CC) -o sandbox sandbox.o sblibc.o sbio.o $(LDFLAGS)
 
-sandbox.o: sandbox.c sbcontext.h sbdebug.h
+sandbox.o: sandbox.c sbcontext.h
 	$(CC) -c sandbox.c $(CFLAGS) -DSB_DEBUG
 
-sblibc.so: sblibc.o sbio.o
-	$(CC) -o sblibc.so sblibc.o sbio.o -shared $(LDFLAGS)
-
 sblibc.o: sblibc.c sbcontext.h sblibc.h
-	$(CC) -c sblibc.c $(CFLAGS) -DSBLIBC_DEBUG
+	$(CC) -c sblibc.c $(CFLAGS) -DSB_DEBUG
 
-sbio.o: sbio.c sblibc.h
-	$(CC) -c sbio.c $(CFLAGS) -DSBLIBC_DEBUG
+sbio.o: sbio.c sbcontext.h sblibc.h
+	$(CC) -c sbio.c $(CFLAGS) -DSB_DEBUG
 
 clean:
-	rm sandbox sblibc.so *.o
+	rm sandbox *.o
