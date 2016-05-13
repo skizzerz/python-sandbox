@@ -13,7 +13,7 @@ class VirtualFS {
 		$this->root['bin'][] = new RealFile( $this, 'python', $pyBin );
 		$this->root[] = new VirtualDir( $this, 'lib' );
 		$this->root['lib'][] = new RealDir( $this, 'python', $pyLib,
-			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => [ '*.py' ] ] );
+			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => [ '*.py', '*.so' ] ] );
 		$this->root['lib'][] = new RealDir( $this, 'sandbox', $sbLib,
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
@@ -22,32 +22,18 @@ class VirtualFS {
 	}
 
 	protected function getNode( $path, $base = AT_FDCWD ) {
-		if ( $path[0] !== '/' ) {
-			if ( $base === AT_FDCWD ) {
-				$path = $this->cwd . '/' . $path;
-			} else {
-				$this->validateFd( $base );
-				$path = $this->fds[$base]->getNode()->getPath() . '/' . $path;
-			}
+		if ( $base === AT_FDCWD ) {
+			$base = $this->cwd;
+		} else {
+			$this->validateFd( $base );
+			$base = $this->fds[$base]->getNode()->getPath();
 		}
 
-		$pp = explode( '/', $path );
-		$np = [];
-
-		foreach ( $pp as $p ) {
-			if ( $p === '' || $p === '.' ) {
-				continue;
-			} elseif ( $p === '..' ) {
-				array_pop( $np );
-			} else {
-				$np[] = $p;
-			}
-		}
-
-		$path = '/' . implode( '/', $np );
-
-		// $path is now normalized into an absolute virtual path (all ./ and ../ resolved)
+		$path = SandboxUtil::normalizePath( $path, $base );
+		$np = explode( '/', $path );
+		array_shift( $np ); // path starts with / so np starts with ''
 		$node = $this->root;
+
 		foreach ( $np as $p ) {
 			if ( !( $node instanceOf DirBase ) ) {
 				throw new SyscallException( ENOTDIR );

@@ -9,8 +9,8 @@ spl_autoload_register(function ($class) {
 
 $IP = __DIR__;
 $pyBin = "$IP/python35/bin/python3";
-$pyLib = "$IP/python35/lib/python3.5";
+$pyLib = "$IP/python35";
 $sbLib = "$IP/lib";
-$sbBin = $IP;
+$sbBin = "$IP/sandbox";
 
 PythonSandbox\Sandbox::runNewSandbox($sbBin, $pyBin, $sbLib, $pyLib);

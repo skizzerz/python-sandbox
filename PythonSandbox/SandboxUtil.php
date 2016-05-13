@@ -17,4 +17,33 @@ final class SandboxUtil {
 		// not entirely helpful, but an internet search can turn up more details
 		return "Error $code.";
 	}
+
+	public static function normalizePath( $path, $base = '/', $stripFileFromBase = false ) {
+		if ( $path[0] !== '/' ) {
+			if ( $stripFileFromBase ) {
+				$pp = explode( '/', $base );
+				array_pop( $pp );
+				$base = '/' . implode( '/', $pp );
+			}
+
+			$path = "{$base}/{$path}";
+		}
+
+		$pp = explode( '/', $path );
+		$np = [];
+
+		foreach ( $pp as $p ) {
+			if ( $p === '' || $p === '.' ) {
+				continue;
+			} elseif ( $p === '..' ) {
+				array_pop( $np );
+			} else {
+				$np[] = $p;
+			}
+		}
+
+		$path = '/' . implode( '/', $np );
+
+		return $path;
+	}
 }

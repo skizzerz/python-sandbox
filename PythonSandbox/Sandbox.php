@@ -18,7 +18,7 @@ class Sandbox {
 
 	public function __construct( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath ) {
 		$this->fs = new VirtualFS( $pyBinPath, $pyLibPath, $sbLibPath );
-		$this->sandboxPath = "$sbBinPath/sandbox";
+		$this->sandboxPath = $sbBinPath;
 		$this->env = [
 			'PYTHONHOME' => '/lib/python',
 			'PYTHONPATH' => '/lib/sandbox',

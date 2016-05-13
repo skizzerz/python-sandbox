@@ -20,6 +20,30 @@ class RealDir extends DirBase {
 		$this->diropts = array_replace( $diroptDefaults, $diropts );
 	}
 
+	public function checkFile( $name ) {
+		$found = ( count( $this->diropts['fileWhitelist'] ) === 0 );
+		foreach ( $this->diropts['fileWhitelist'] as $pattern ) {
+			if ( fnmatch( $pattern, $name, FNM_PERIOD ) ) {
+				$found = true;
+				break;
+			}
+		}
+
+		return $found;
+	}
+
+	public function checkSubdir( $name ) {
+		$found = ( count( $this->diropts['subdirWhitelist'] ) === 0 );
+		foreach ( $this->diropts['subdirWhitelist'] as $pattern ) {
+			if ( fnmatch( $pattern, $name, FNM_PERIOD ) ) {
+				$found = true;
+				break;
+			}
+		}
+
+		return $found;
+	}
+
 	protected function childExists( $name ) {
 		return $this->getChild( $name ) !== null;
 	}
@@ -49,7 +73,8 @@ class RealDir extends DirBase {
 
 				// resolve up to 10 symlinks before giving up
 				for ( $i = 0; is_link( $fullpath ) && $i < 10; ++$i ) {
-					$fullpath = readlink( $fullpath );
+					$linkpath = readlink( $fullpath );
+					$fullpath = SandboxUtil::normalizePath( $linkpath, $fullpath, true );
 
 					if ( !file_exists( $fullpath ) ) {
 						return null;
@@ -68,27 +93,11 @@ class RealDir extends DirBase {
 					return null;
 				}
 
-				$found = ( count( $this->diropts['subdirWhitelist'] ) === 0 );
-				foreach ( $this->diropts['subdirWhitelist'] as $pattern ) {
-					if ( fnmatch( $pattern, $name, FNM_PERIOD ) ) {
-						$found = true;
-						break;
-					}
-				}
-
-				if ( $found ) {
+				if ( $this->checkSubdir( $name ) ) {
 					$node = new RealDir( $this->fs, $name, $fullpath, $this->diropts, $this );
 				}
 			} else {
-				$found = ( count( $this->diropts['fileWhitelist'] ) === 0 );
-				foreach ( $this->diropts['fileWhitelist'] as $pattern ) {
-					if ( fnmatch( $pattern, $name, FNM_PERIOD ) ) {
-						$found = true;
-						break;
-					}
-				}
-
-				if ( $found ) {
+				if ( $this->checkFile( $name ) ) {
 					$node = new RealFile( $this->fs, $name, $fullpath, $this );
 				}
 			}

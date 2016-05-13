@@ -62,16 +62,29 @@ class DirFD extends FDBase {
 				break;
 			}
 
+			$stat = stat( "{$this->realpath}/{$next}" );
+			// check if we're allowed to view this file/directory before
+			// returning that it exists
+			if ( ( $stat['mode'] & S_IFMT ) === S_IFDIR ) {
+				if ( !$this->node->checkSubdir( $next ) ) {
+					++$this->off;
+					continue;
+				}
+			} else {
+				if ( !$this->node->checkFile( $next ) ) {
+					++$this->off;
+					continue;
+				}
+			}
+
 			$len = strlen( $next );
 			if ( $used + $structBytes + $len > $bufsize ) {
 				break;
 			}
 
-			$stat = stat( "{$this->realpath}/{$next}" );
-
 			$arr[] = [
 				'd_ino' => $stat['ino'],
-				'd_type' => ($stat['mode'] & 0170000) >> 12,
+				'd_type' => ($stat['mode'] & S_IFMT) >> 12,
 				'd_name' => $next,
 			];
 			$used += $structBytes + $len;
