@@ -24,6 +24,19 @@ class RealFD extends FDBase {
 		return fread( $this->fh, $length );
 	}
 
+	public function seek( $offset, $whence ) {
+		if ( $this->fh === null ) {
+			throw new SyscallException( EBADF );
+		}
+
+		$ret = fseek( $this->fh, $offset, $whence );
+		if ( $ret === -1 ) {
+			throw new SyscallException( EINVAL );
+		}
+
+		return $ret;
+	}
+
 	public function stat() {
 		if ( $this->fh === null ) {
 			throw new SyscallException( EBADF );

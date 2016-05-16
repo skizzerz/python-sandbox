@@ -12,5 +12,11 @@ $pyBin = "$IP/python35/bin/python3";
 $pyLib = "$IP/python35";
 $sbLib = "$IP/lib";
 $sbBin = "$IP/sandbox";
+$sbPreload = "$IP/libsbpreload.so";
 
-PythonSandbox\Sandbox::runNewSandbox($sbBin, $pyBin, $sbLib, $pyLib);
+$opts = getopt('v');
+if (isset($opts['v'])) {
+	PythonSandbox\Configuration::singleton()->set('Verbose', true);
+}
+
+PythonSandbox\Sandbox::runNewSandbox($sbBin, $pyBin, $sbLib, $pyLib, $sbPreload);

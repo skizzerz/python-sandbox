@@ -319,9 +319,12 @@ const struct sys_arg_map arg_map[] = {
 	ASYS(read, 3),
 	ASYS(stat, 2),
 	ASYS(fstat, 2),
+	ASYS(lstat, 2),
 	ASYS(readlink, 3),
 	ASYS(openat, 4),
 	ASYS(getdents, 3),
+	ASYS(lseek, 3),
+	ASYS(dup, 1),
 	{ NULL, 0, NULL }
 };
 

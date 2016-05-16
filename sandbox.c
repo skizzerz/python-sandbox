@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <execinfo.h>
+#include <dlfcn.h>
 
 #include "sbcontext.h"
 #include "sblibc.h"
@@ -108,9 +109,13 @@ int main(int argc, char *argv[])
 	 * Memory:
 	 * - mmap(NULL, MAP_ANONYMOUS) - new mappings that don't read from fds, kernel chooses address
 	 * - brk() - memory allocation (we have setrlimit to keep this in check)
+	 * - munmap() - deallocation
+	 * Signal Handlers:
+	 * - sigreturn(), rt_sigreturn(), rt_sigprocmask(), sigaltstack()
+	 * - rt_sigaction() - can retrieve all signals (2nd param NULL), cannot set handler for SIGSYS
 	 * Misc:
-	 * - sigreturn(), rt_sigreturn() - needed for signal handlers
-	 * - sigaltstack() - Python wants to call this even if it doesn't set up any signal handlers, sigh.
+	 * - tgkill() - Called by Python internals
+	 * - futex() - dlsym() needs this, python threading probably does too
 	 * - exit(), exit_group() - so program can terminate
 	 */
 	ctx = seccomp_init(SCMP_ACT_TRAP);
@@ -190,6 +195,10 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;
 
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
+	if (ret < 0)
+		goto cleanup;
+
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sigreturn), 0);
 	if (ret < 0)
 		goto cleanup;
@@ -198,7 +207,27 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;
 
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigprocmask), 0);
+	if (ret < 0)
+		goto cleanup;
+
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(sigaltstack), 0);
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 1, SCMP_A0(SCMP_CMP_NE, SIGSYS));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(rt_sigaction), 1, SCMP_A1(SCMP_CMP_EQ, NULL));
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(futex), 0);
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 1, SCMP_A0(SCMP_CMP_EQ, getpid()));
 	if (ret < 0)
 		goto cleanup;
 
@@ -213,6 +242,17 @@ int main(int argc, char *argv[])
 	ret = seccomp_load(ctx);
 	if (ret < 0)
 		goto cleanup;
+
+	// inform the preloader that we are now inside the sandbox
+	// this causes it to override a couple more libc functions that it simply passes through above
+	void (*enable_sandbox)(void) = dlsym(RTLD_DEFAULT, "enable_sandbox");
+	if (!enable_sandbox) {
+		ret = -1;
+		fprintf(stderr, "%s: Unable to find enable_sandbox function. Ensure preloader is installed.\n", argv[0]);
+		goto cleanup;
+	}
+
+	enable_sandbox();
 
 	// initialize python interpreter -- this is initialized AFTER sandbox is set up
 	// so that the python path can be faked (in essence, this allows for the parent proc
@@ -231,17 +271,31 @@ int main(int argc, char *argv[])
 	Py_Initialize();
 
 	// init the python side of things by populating libraries, etc.
-	// We expect that the parent proc provides a "main.py" file somewhere which contains
+	// We expect that the parent proc provides a file which contains
 	// this initialization code, as well as the code to run whatever the user wanted.
-	mainpy = fopen("main.py", "r");
+	mainpy = fopen("/lib/sandbox/init.py", "r");
 	if (mainpy == NULL) {
 		ret = errno;
-		fprintf(stderr, "%s: Cannot open main.py.\n", argv[0]);
+		fprintf(stderr, "%s: Cannot open /lib/sandbox/init.py.\n", argv[0]);
 		goto cleanup;
 	}
 
 	// this closes mainpy after completion so we don't need to fclose it in cleanup
 	ret = PyRun_SimpleFile(mainpy, "init.py");
+	if (ret != 0) {
+		fprintf(stderr, "%s: init.py returned error %d.\n", argv[0], ret);
+		goto cleanup;
+	}
+
+	// now run the user's code
+	mainpy = fopen("/tmp/main.py", "r");
+	if (mainpy == NULL) {
+		ret = errno;
+		fprintf(stderr, "%s: Cannot open /tmp/main.py.\n", argv[0]);
+		goto cleanup;
+	}
+
+	ret = PyRun_SimpleFile(mainpy, "main.py");
 
 cleanup:
 	Py_Finalize();

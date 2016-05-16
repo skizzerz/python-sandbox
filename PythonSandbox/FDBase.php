@@ -19,6 +19,7 @@ abstract class FDBase {
 	abstract public function read( $length );
 	abstract public function stat();
 	abstract public function close();
+	abstract public function seek( $offset, $whence );
 
 	public function getdents( $bufsize, $structBytes ) {
 		throw new SyscallException( ENOTDIR );

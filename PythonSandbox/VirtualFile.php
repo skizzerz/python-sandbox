@@ -30,6 +30,10 @@ class VirtualFile extends FileBase {
 		return substr( $this->contents, $pos, $length );
 	}
 
+	public function getLen() {
+		return $this->len;
+	}
+
 	public function stat() {
 		$time = time();
 		$mode = S_IFREG | $this->getPermissions();
@@ -40,7 +44,7 @@ class VirtualFile extends FileBase {
 			'dev' => 1,
 			'ino' => $this->inode,
 			'mode' => $mode,
-			'nlinks' => 0,
+			'nlink' => 0,
 			'uid' => SB_UID,
 			'gid' => SB_GID,
 			'rdev' => 0,
@@ -57,7 +61,7 @@ class VirtualFile extends FileBase {
 		if ( $mode & ~7 ) {
 			throw new SyscallException( EINVAL );
 		} elseif ( $mode & 3 ) {
-			return false
+			return false;
 		}
 
 		return true;

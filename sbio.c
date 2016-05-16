@@ -367,6 +367,84 @@ SYS(stat)
 	return ret;
 }
 
+SYS(lstat)
+{
+	const char *path = va_arg(args, const char *);
+	struct stat *buf = va_arg(args, struct stat *);
+
+	int ret = 0;
+	json_object *arg1 = json_object_new_string(path);
+	json_object *out = NULL;
+	json_object *data = NULL;
+	json_object *fld = NULL;
+
+	ret = trampoline(&out, "lstat", 1, arg1);
+	if (ret != 0) {
+		json_object_put(out);
+		return ret;
+	}
+
+	if (!json_object_object_get_ex(out, "data", &data)) {
+		debug_error("data expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(data, json_type_object)) {
+		debug_error("data is not an object\n");
+		exit(EPROTO);
+	}
+
+	ST_GET(dev_t, st_dev);
+	ST_GET(ino_t, st_ino);
+	ST_GET(mode_t, st_mode);
+	ST_GET(nlink_t, st_nlink);
+	ST_GET(uid_t, st_uid);
+	ST_GET(gid_t, st_gid);
+	ST_GET(dev_t, st_rdev);
+	ST_GET(off_t, st_size);
+	ST_GET(blksize_t, st_blksize);
+	ST_GET(blkcnt_t, st_blocks);
+
+	if (!json_object_object_get_ex(data, "st_atime", &fld)) {
+		debug_error("data.st_atime expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(fld, json_type_int)) {
+		debug_error("data.st_atime is not an int\n");
+		exit(EPROTO);
+	}
+
+	buf->st_atim.tv_sec = (time_t)json_object_get_int64(fld);
+
+	if (!json_object_object_get_ex(data, "st_mtime", &fld)) {
+		debug_error("data.st_mtime expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(fld, json_type_int)) {
+		debug_error("data.st_mtime is not an int\n");
+		exit(EPROTO);
+	}
+
+	buf->st_mtim.tv_sec = (time_t)json_object_get_int64(fld);
+
+	if (!json_object_object_get_ex(data, "st_ctime", &fld)) {
+		debug_error("data.st_ctime expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(fld, json_type_int)) {
+		debug_error("data.st_ctime is not an int\n");
+		exit(EPROTO);
+	}
+
+	buf->st_ctim.tv_sec = (time_t)json_object_get_int64(fld);
+
+	json_object_put(out);
+	return ret;
+}
+
 SYS(fstat)
 {
 	int fd = va_arg(args, int);
@@ -625,4 +703,26 @@ SYS(getdents)
 
 	json_object_put(out);
 	return d->d_off;
+}
+
+SYS(lseek)
+{
+	int fd = va_arg(args, int);
+	off_t offset = va_arg(args, off_t);
+	int whence = va_arg(args, int);
+
+	json_object *arg1 = json_object_new_int(fd);
+	json_object *arg2 = json_object_new_int64(offset);
+	json_object *arg3 = json_object_new_int(whence);
+
+	return trampoline(NULL, "lseek", 3, arg1, arg2, arg3);
+}
+
+SYS(dup)
+{
+	int oldfd = va_arg(args, int);
+
+	json_object *arg1 = json_object_new_int(oldfd);
+
+	return trampoline(NULL, "dup", 1, arg1);
 }

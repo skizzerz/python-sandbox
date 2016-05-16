@@ -102,6 +102,9 @@ class RealDir extends DirBase {
 				}
 			}
 
+			// cache this node
+			$this->addChildInternal( $name, $node );
+
 			return $node;
 		}
 

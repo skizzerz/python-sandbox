@@ -17,8 +17,32 @@ class VirtualFS {
 		$this->root['lib'][] = new RealDir( $this, 'sandbox', $sbLib,
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
+		// TODO: this is the file that contains the user's code (e.g. the main module we're running)
+		$this->root['tmp'][] = new VirtualFile( $this, 'main.py', 'print(__name__)' );
 		$this->root[] = new RealDir( $this, 'dev', '/dev',
 			[ 'fileWhitelist' => [ 'urandom' ] ] );
+
+		// we need an orig-prefix.txt file in lib/pythonX.Y, so add that here
+		// (need to figure out what X.Y is too)
+		$pyVerDir = false;
+		foreach ( scandir( "$pyLib/lib" ) as $subdir ) {
+			if ( substr( $subdir, 0, 6 ) === 'python' ) {
+				$pyVerDir = $subdir;
+				break;
+			}
+		}
+
+		if ( $pyVerDir === false ) {
+			throw new SandboxException( 'Unable to find python directory in pyLib' );
+		}
+
+		$origPrefix = new VirtualFile( $this, 'orig-prefix.txt', '/lib/python' );
+		$this->root['lib']['python']['lib64'][$pyVerDir][] = $origPrefix;
+
+		// init stdin/out/err so that fstat can be called on them
+		$this->fds[0] = new StatOnlyFD( $this->root, STDIN );
+		$this->fds[1] = new StatOnlyFD( $this->root, STDOUT );
+		$this->fds[2] = new StatOnlyFD( $this->root, STDERR );
 	}
 
 	protected function getNode( $path, $base = AT_FDCWD ) {
@@ -94,7 +118,7 @@ class VirtualFS {
 	}
 
 	public function fstat( $fd ) {
-		$this->validateFd( $fd );
+		$this->validateFd( $fd, true );
 
 		return new StatResult( $this->fds[$fd]->stat() );
 	}
@@ -112,7 +136,7 @@ class VirtualFS {
 	public function read( $fd, $length ) {
 		$maxlen = Configuration::singleton()->get( 'MaxReadLength' );
 		if ( $length > $maxlen ) {
-			throw new SyscallException( EIO );
+			$length = $maxlen;
 		}
 		
 		$this->validateFd( $fd );	
@@ -120,8 +144,20 @@ class VirtualFS {
 		return $this->fds[$fd]->read( $length );
 	}
 
-	public function validateFd( $fd ) {
-		if ( $fd >= 0 && $fd <= 4 ) {
+	public function seek( $fd, $offset, $whence ) {
+		$this->validateFd( $fd );
+
+		if ( !in_array( $whence, [ SEEK_SET, SEEK_CUR, SEEK_END ] ) ) {
+			throw new SyscallException( EINVAL );
+		}
+
+		return $this->fds[$fd]->seek( $offset, $whence );
+	}
+
+	public function validateFd( $fd, $allowSpecial = false ) {
+		if ( !$allowSpecial && $fd >= 0 && $fd <= 2 ) {
+			throw new SyscallException( EPERM );
+		} elseif ( $fd >= 3 && $fd <= 4 ) {
 			throw new SyscallException( EPERM );
 		} elseif ( !isset( $this->fds[$fd] ) ) {
 			throw new SyscallException( EBADF );
@@ -129,7 +165,7 @@ class VirtualFS {
 	}
 
 	public function dup( $oldFd, $newFd = 0, $exactFd = false ) {
-		$this->validateFd( $oldFd );
+		$this->validateFd( $oldFd, true );
 
 		$maxfds = Configuration::singleton()->get( 'MaxFDs' );
 		if ( $newFd !== 0 && ( ( $newFd < 5 && $exactFd ) || $newFd >= $maxFds ) ) {

@@ -40,6 +40,20 @@ class DirFD extends FDBase {
 		$this->fh = null;
 	}
 
+	public function seek( $offset, $whence ) {
+		if ( $this->fh === null ) {
+			throw new SyscallException( EBADF );
+		}
+
+		if ( $offset === 0 && $whence === SEEK_SET ) {
+			rewinddir( $this->fh );
+			$this->off = 0;
+			return 0;
+		}
+
+		throw new SyscallException( EINVAL, 'Invalid directory seek' );
+	}
+
 	public function getdents( $bufsize, $structBytes ) {
 		if ( $this->fh === null ) {
 			throw new SyscallException( EBADF );

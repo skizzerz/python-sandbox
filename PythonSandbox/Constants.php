@@ -3,24 +3,26 @@
 namespace PythonSandbox;
 
 // uid/gid of the sandbox (fake)
+// these are also in sandbox-preload.c
 const SB_UID = 1000;
 const SB_GID = 1000;
 
 // errno constants
-const EPERM   = 1;  // Operation not permitted
-const ENOENT  = 2;  // No such file or directory
-const EIO     = 5;  // I/O error
-const EBADF   = 9;  // Bad file number
-const EACCES  = 13; // Permission denied
-const EEXIST  = 17; // File exists
-const ENOTDIR = 20; // Not a directory
-const EISDIR  = 21; // Is a directory
-const EINVAL  = 22; // Invalid argument
-const EMFILE  = 24; // Too many open files
-const ENOSPC  = 28; // No space left on device
-const EROFS   = 30; // Read-only file system
-const ENOSYS  = 38; // Function not implemented
-const ELOOP   = 40; // Too many symbolic links encountered
+const EPERM     = 1;  // Operation not permitted
+const ENOENT    = 2;  // No such file or directory
+const EIO       = 5;  // I/O error
+const EBADF     = 9;  // Bad file number
+const EACCES    = 13; // Permission denied
+const EEXIST    = 17; // File exists
+const ENOTDIR   = 20; // Not a directory
+const EISDIR    = 21; // Is a directory
+const EINVAL    = 22; // Invalid argument
+const EMFILE    = 24; // Too many open files
+const ENOSPC    = 28; // No space left on device
+const EROFS     = 30; // Read-only file system
+const ENOSYS    = 38; // Function not implemented
+const ELOOP     = 40; // Too many symbolic links encountered
+const EOVERFLOW = 75; // Value too large for defined data type
 
 // file modes
 // these flags aren't necessarily the same across every OS

@@ -9,9 +9,12 @@ ESYS(close);
 ESYS(read);
 ESYS(stat);
 ESYS(fstat);
+ESYS(lstat);
 ESYS(readlink);
 ESYS(openat);
 ESYS(getdents);
+ESYS(lseek);
+ESYS(dup);
 
 struct sys_arg_map {
 	const char *sys;

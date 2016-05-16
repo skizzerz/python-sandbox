@@ -11,12 +11,12 @@ class Sandbox {
 	protected $proc = false;
 	protected $pipes = [];
 
-	public static function runNewSandbox( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath ) {
-		$sb = new Sandbox( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath );
+	public static function runNewSandbox( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath, $preloadPath ) {
+		$sb = new Sandbox( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath, $preloadPath );
 		return $sb->run();
 	}
 
-	public function __construct( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath ) {
+	public function __construct( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath, $preloadPath ) {
 		$this->fs = new VirtualFS( $pyBinPath, $pyLibPath, $sbLibPath );
 		$this->sandboxPath = $sbBinPath;
 		$this->env = [
@@ -24,8 +24,8 @@ class Sandbox {
 			'PYTHONPATH' => '/lib/sandbox',
 			'PYTHONDONTWRITEBYTECODE' => '1',
 			'PYTHONNOUSERSITE' => '1',
-			'PYTHONFAULTHANDLER' => '',
 			'PATH' => '/bin',
+			'LD_PRELOAD' => $preloadPath
 		];
 	}
 
@@ -42,7 +42,7 @@ class Sandbox {
 	public function run() {
 		// proc_open spawns the subproc in a shell, which is not desirable here, so we use exec
 		// the child proc only has direct access to stdin/stdout/stderr during init, once the
-		// sandbox is established it can only read from 3 and 5 and write to 4.
+		// sandbox is established it can only read from 3 and write to 4.
 		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /bin/python 0 0",
 			[
 				0 => STDIN,

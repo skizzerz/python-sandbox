@@ -15,6 +15,7 @@ class SyscallHandler {
 
 	public function run() {
 		$self = new \ReflectionObject( $this );
+		$config = Configuration::singleton();
 
 		// this function loops until the child proc finishes or we get an exception
 		// (other than SyscallException which indicate we should pass error down to child).
@@ -37,7 +38,9 @@ class SyscallHandler {
 				break;
 			}
 
-			echo "<<< $line";
+			if ( $config->get( 'Verbose' ) ) {
+				echo "<<< $line";
+			}
 
 			$call = json_decode( $line, false, 32, JSON_BIGINT_AS_STRING );
 			if ( $call === null || !isset( $call->name ) || !isset( $call->args ) || !is_array( $call->args ) ) {
@@ -101,7 +104,13 @@ class SyscallHandler {
 					$ret = $json;
 				}
 
-				echo ">>> $ret\n";
+				if ( $config->get( 'Verbose' ) ) {
+					if ( strlen( $ret ) > 250 ) {
+						echo ">>> " . substr( $ret, 0, 250 ) . "...\n";
+					} else {
+						echo ">>> $ret\n";
+					}
+				}
 
 				$r = [];
 				$w = [ $this->wpipe ];
@@ -203,6 +212,10 @@ class SyscallHandler {
 		}
 	}
 
+	public function sys__dup__1( $oldfd ) {
+		return $this->sb->getfs()->dup( $oldfd );
+	}
+
 	public function sys__close__1( $fd ) {
 		$this->sb->getfs()->close( $fd );
 		return 0;
@@ -218,21 +231,14 @@ class SyscallHandler {
 		return [ 0, $res ];
 	}
 
+	public function sys__lstat__1( $path ) {
+		// our virtualized fs does not support symlinks
+		$res = $this->sb->getfs()->stat( $path );
+		return [ 0, $res ];
+	}
+
 	public function sys__fstat__1( $fd ) {
-		switch ( $fd ) {
-		case 0:
-			$res = new StatResult( fstat( STDIN ) );
-			break;
-		case 1:
-			$res = new StatResult( fstat( STDOUT ) );
-			break;
-		case 2:
-			$res = new StatResult( fstat( STDERR ) );
-			break;
-		default:
-			$res = $this->sb->getfs()->fstat( $fd );
-			break;
-		}
+		$res = $this->sb->getfs()->fstat( $fd );
 
 		return [ 0, $res ];
 	}
@@ -253,5 +259,25 @@ class SyscallHandler {
 		// the child sandbox will correctly compute the actual return value, and only
 		// uses ours to check for error (below 0), end of directory (0), or data (above zero).
 		return [ count( $arr ), $arr ];
+	}
+
+	public function sys__lseek__3( $fd, $offset, $whence ) {
+		return $this->sb->getfs()->seek( $fd, $offset, $whence );
+	}
+
+	public function sys__getuid__0() {
+		return SB_UID;
+	}
+
+	public function sys__geteuid__0() {
+		return SB_UID;
+	}
+
+	public function sys__getgid__0() {
+		return SB_GID;
+	}
+
+	public function sys__getegid__0() {
+		return SB_GID;
 	}
 }
