@@ -19,7 +19,9 @@ final class SandboxUtil {
 	}
 
 	public static function normalizePath( $path, $base = '/', $stripFileFromBase = false ) {
-		if ( $path[0] !== '/' ) {
+		if ( $path === '' ) {
+			return $base;
+		} elseif ( $path[0] !== '/' ) {
 			if ( $stripFileFromBase ) {
 				$pp = explode( '/', $base );
 				array_pop( $pp );

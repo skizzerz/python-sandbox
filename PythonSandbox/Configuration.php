@@ -7,7 +7,30 @@ class Configuration {
 
 	protected $config = [
 		'MaxFDs' => 64,
-		'MaxReadLength' => 8192
+		'MaxReadLength' => 8192,
+		// if extending this, sandbox.c should be extended and recompiled too
+		'AllowedLibs' => [
+			'*.py',
+			'array.*.so',
+			'binascii.*.so',
+			'_bisect.*.so',
+			'cmath.*.so',
+			'_codecs_*.so',
+			'_csv.*.so',
+			'_datetime.*.so',
+			'_decimal.*.so',
+			'_elementtree.*.so',
+			'_heapq.*.so',
+			'_json.*.so',
+			'_lsprof.*.so',
+			'math.*.so',
+			'_multibytecodec.*.so',
+			'pyexpat.*.so',
+			'_random.*.so',
+			'resource.*.so',
+			'_struct.*.so',
+			'unicodedata.*.so'
+		]
 	];
 
 	protected function __construct() { }

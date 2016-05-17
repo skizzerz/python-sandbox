@@ -36,9 +36,9 @@ extern int base64decode(const char *in, size_t inLen, unsigned char *out, size_t
 #define PIPEIN 3
 #define PIPEOUT 4
 
-// default resource usage limits by sandbox, 64 MiB of memory and 5 seconds of cpu time
+// default resource usage limits by sandbox, 200 MiB of memory and 5 seconds of cpu time
 // these can be modified (increased or decreased) by argv params
-#define DEF_MEMORY 67108864
+#define DEF_MEMORY 209715200
 #define DEF_CPU 5
 
 // architecture-dependent macros to manipulate registers given a ucontext_t

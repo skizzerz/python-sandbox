@@ -15,7 +15,7 @@ class DirFD extends FDBase {
 
 	public function __destruct() {
 		if ( $this->fh !== null ) {
-			$this->close();
+			$this->closeInternal();
 		}
 	}
 
@@ -31,7 +31,7 @@ class DirFD extends FDBase {
 		return stat( $this->realpath );
 	}
 
-	public function close() {
+	protected function closeInternal() {
 		if ( $this->fh === null ) {
 			throw new SyscallException( EBADF );
 		}

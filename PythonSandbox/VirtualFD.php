@@ -65,7 +65,7 @@ class VirtualFD extends FDBase {
 		return $this->pos;
 	}
 
-	public function close() {
+	protected function closeInternal() {
 		if ( $this->node === null ) {
 			throw new SyscallException( EBADF );
 		}

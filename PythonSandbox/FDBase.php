@@ -6,6 +6,7 @@ abstract class FDBase {
 	protected $node = null;
 	protected $fdFlags = 0; // FD_*
 	protected $fileFlags = 0; // O_*
+	protected $refcount = 1;
 
 	public function __construct( Node $node, $mode ) {
 		$this->node = $node;
@@ -18,8 +19,20 @@ abstract class FDBase {
 
 	abstract public function read( $length );
 	abstract public function stat();
-	abstract public function close();
+	abstract protected function closeInternal();
 	abstract public function seek( $offset, $whence );
+
+	public function &dup() {
+		++$this->refcount;
+		return $this;
+	}
+
+	public function close() {
+		--$this->refcount;
+		if ( $this->refcount == 0 ) {
+			$this->closeInternal();
+		}
+	}
 
 	public function getdents( $bufsize, $structBytes ) {
 		throw new SyscallException( ENOTDIR );

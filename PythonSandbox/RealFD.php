@@ -12,7 +12,7 @@ class RealFD extends FDBase {
 
 	public function __destruct() {
 		if ( $this->fh !== null ) {
-			$this->close();
+			$this->closeInternal();
 		}
 	}
 
@@ -45,7 +45,7 @@ class RealFD extends FDBase {
 		return fstat( $this->fh );
 	}
 
-	public function close() {
+	protected function closeInternal() {
 		if ( $this->fh === null ) {
 			throw new SyscallException( EBADF );
 		}

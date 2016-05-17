@@ -6,38 +6,52 @@ class VirtualFS {
 	protected $root = null;
 	protected $fds = [];
 	protected $cwd = '/tmp';
+	protected $dynlibDir = '';
 
-	public function __construct( $pyBin, $pyLib, $sbLib ) {
-		$this->root = new VirtualDir( $this, '' );
-		$this->root[] = new VirtualDir( $this, 'bin' );
-		$this->root['bin'][] = new RealFile( $this, 'python', $pyBin );
-		$this->root[] = new VirtualDir( $this, 'lib' );
-		$this->root['lib'][] = new RealDir( $this, 'python', $pyLib,
-			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => [ '*.py', '*.so' ] ] );
-		$this->root['lib'][] = new RealDir( $this, 'sandbox', $sbLib,
-			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
-		$this->root[] = new VirtualDir( $this, 'tmp' );
-		// TODO: this is the file that contains the user's code (e.g. the main module we're running)
-		$this->root['tmp'][] = new VirtualFile( $this, 'main.py', 'print(__name__)' );
-		$this->root[] = new RealDir( $this, 'dev', '/dev',
-			[ 'fileWhitelist' => [ 'urandom' ] ] );
-
-		// we need an orig-prefix.txt file in lib/pythonX.Y, so add that here
-		// (need to figure out what X.Y is too)
+	public function __construct( $pyVer, $pyBase, $sbBase ) {
 		$pyVerDir = false;
-		foreach ( scandir( "$pyLib/lib" ) as $subdir ) {
-			if ( substr( $subdir, 0, 6 ) === 'python' ) {
-				$pyVerDir = $subdir;
-				break;
-			}
+		$libDir = 'lib';
+		if ( file_exists( "$pyBase/lib64/$pyVer" ) ) {
+			$pyVerDir = "$pyBase/lib64/$pyVer";
+			$libDir = 'lib64';
+		} elseif ( file_exists( "$pyBase/lib/$pyVer" ) ) {
+			$pyVerDir = "$pyBase/lib/$pyVer";
 		}
 
 		if ( $pyVerDir === false ) {
 			throw new SandboxException( 'Unable to find python directory in pyLib' );
 		}
 
-		$origPrefix = new VirtualFile( $this, 'orig-prefix.txt', '/lib/python' );
-		$this->root['lib']['python']['lib64'][$pyVerDir][] = $origPrefix;
+		$this->dynlibDir = "$pyVerDir/lib-dynload";
+		$allowedLibs = Configuration::singleton()->get( 'AllowedLibs' );
+
+		$this->root = new VirtualDir( $this, '' );
+		$this->root[] = new VirtualDir( $this, 'usr' );
+		$this->root['usr'][] = new VirtualDir( $this, 'lib' );
+		if ( $libDir === 'lib64' ) {
+			$this->root['usr'][] = new VirtualDir( $this, 'lib64' );
+		}
+		$this->root['usr'][] = new VirtualDir( $this, 'bin' );
+		$this->root['usr']['bin'][] = new RealFile( $this, 'python', "$pyBase/bin/python3" );
+		$this->root['usr'][$libDir][] = new RealDir( $this, $pyVer, $pyVerDir,
+			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedLibs ] );
+		$this->root['usr']['lib'][] = new RealDir( $this, 'sandbox', "$sbBase/lib",
+			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
+		$this->root[] = new VirtualDir( $this, 'tmp' );
+		$this->root[] = new RealDir( $this, 'dev', '/dev',
+			[ 'fileWhitelist' => [ 'urandom' ] ] );
+
+		// detect if we are in a virtualenv; if we are we need an orig-prefix.txt file
+		// and another dir in lib that points to the real python installation, as virtualenv
+		// does not include every base python library (such as json).
+		if ( file_exists( "$pyVerDir/orig-prefix.txt" ) ) {
+			$prefix = file_get_contents( "$pyVerDir/orig-prefix.txt" );
+			$this->root[] = new VirtualDir( $this, $libDir );
+			$this->root[$libDir][] = new RealDir( $this, $pyVer, "$prefix/$libDir/$pyVer",
+				[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedLibs ] );
+			$this->root['usr'][$libDir][$pyVer][] =
+				new VirtualFile( $this, 'orig-prefix.txt', '/' );
+		}
 
 		// init stdin/out/err so that fstat can be called on them
 		$this->fds[0] = new StatOnlyFD( $this->root, STDIN );
@@ -69,6 +83,10 @@ class VirtualFS {
 		}
 
 		return $node;
+	}
+
+	public function getDynlibDir() {
+		return $this->dynlibDir;
 	}
 
 	public function open( $path, $flags, $mode, $base ) {
@@ -184,7 +202,7 @@ class VirtualFS {
 
 		for ( $i = $newFd; $i < $maxfds; ++$i ) {
 			if ( !isset( $this->fds[$i] ) ) {
-				$this->fds[$i] = &$this->fds[$oldFd];
+				$this->fds[$i] = &$this->fds[$oldFd]->dup();
 				return $i;
 			}
 		}

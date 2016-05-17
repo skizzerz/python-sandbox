@@ -2,6 +2,7 @@
 #include <seccomp.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/types.h>
 #include <sys/resource.h>
 #include <sys/mman.h>
 #include <ucontext.h>
@@ -12,9 +13,40 @@
 #include <string.h>
 #include <execinfo.h>
 #include <dlfcn.h>
+#include <dirent.h>
 
 #include "sbcontext.h"
 #include "sblibc.h"
+
+// these libraries are preloaded for use inside of python
+// trailing . is important, be sure to include it
+struct libname {
+	const char *name;
+	int len;
+};
+
+struct libname libs[] = {
+	{ "array.", 6 },
+	{ "binascii.", 9 },
+	{ "_bisect.", 8 },
+	{ "cmath.", 6 },
+	{ "_codecs_", 8 }, // no trailing . since this specifies multiple codecs
+	{ "_csv.", 5 },
+	{ "_datetime.", 10 },
+	{ "_decimal.", 9 },
+	{ "_elementtree.", 13 },
+	{ "_heapq.", 7 },
+	{ "_json.", 6 },
+	{ "_lsprof.", 8 },
+	{ "math.", 5 },
+	{ "_multibytecodec.", 16 },
+	{ "pyexpat.", 8 },
+	{ "_random.", 8 },
+	{ "resource.", 9 },
+	{ "_struct.", 8 },
+	{ "unicodedata.", 12 },
+	{ NULL, 0 }
+};
 
 void sigsys_handler(int signal, siginfo_t *info, void *context);
 
@@ -38,8 +70,8 @@ int main(int argc, char *argv[])
 #endif
 
 	// verify we have all necessary args and that fds 3 and 4 have been opened for us
-	if (argc < 4) {
-		fprintf(stderr, "Usage: %s path_to_python memory_limit_bytes cpu_limit_secs\n", argv[0]);
+	if (argc < 5) {
+		fprintf(stderr, "Usage: %s path_to_python memory_limit_bytes cpu_limit_secs preload_dir\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -52,6 +84,11 @@ int main(int argc, char *argv[])
 	ret = fcntl(PIPEOUT, F_GETFD);
 	if (ret < 0) {
 		fprintf(stderr, "%s: Must be run as a child process with fd 4 opened.\n", argv[0]);
+		goto cleanup;
+	}
+
+	if (strlen(argv[4]) > 400) {
+		fprintf(stderr, "%s: dynlib dir name too large.\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -82,6 +119,40 @@ int main(int argc, char *argv[])
 	ret = setrlimit(RLIMIT_CPU, &rl);
 	if (ret < 0)
 		goto cleanup;
+
+	// map any .so files that python needs, aka any .so in argv[4]
+	DIR *dp;
+	struct dirent *ep;
+	void *handle;
+	int i;
+	size_t ds = strlen(argv[4]);
+	char fnamebuf[512] = {0};
+	strncpy(fnamebuf, argv[4], 512);
+	if (fnamebuf[ds - 1] != '/') {
+		fnamebuf[ds] = '/';
+		fnamebuf[ds + 1] = 0;
+		++ds;
+	}
+
+	dp = opendir(argv[4]);
+	if (dp == NULL) {
+		fprintf(stderr, "%s: Could not open dynlib dir.\n", argv[0]);
+		goto cleanup;
+	}
+
+	while ((ep = readdir(dp))) {
+		for (i = 0; libs[i].name != NULL; ++i) {
+			if (!strncmp(ep->d_name, libs[i].name, libs[i].len)) {
+				strncpy(fnamebuf + ds, ep->d_name, 512 - ds);
+				fnamebuf[511] = 0;
+				handle = dlopen(fnamebuf, RTLD_LAZY | RTLD_NODELETE);
+				dlclose(handle);
+				break;
+			}
+		}
+	}
+
+	closedir(dp);
 
 	// set up our SIGSYS handler; any disallowed syscalls are trapped by this handler
 	// and sent up to the parent to process.
@@ -114,6 +185,7 @@ int main(int argc, char *argv[])
 	 * - sigreturn(), rt_sigreturn(), rt_sigprocmask(), sigaltstack()
 	 * - rt_sigaction() - can retrieve all signals (2nd param NULL), cannot set handler for SIGSYS
 	 * Misc:
+	 * - getrusage(RUSAGE_SELF) - used for profiling purposes
 	 * - tgkill() - Called by Python internals
 	 * - futex() - dlsym() needs this, python threading probably does too
 	 * - exit(), exit_group() - so program can terminate
@@ -227,6 +299,10 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;
 
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(getrusage), 1, SCMP_A0(SCMP_CMP_EQ, RUSAGE_SELF));
+	if (ret < 0)
+		goto cleanup;
+
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(tgkill), 1, SCMP_A0(SCMP_CMP_EQ, getpid()));
 	if (ret < 0)
 		goto cleanup;
@@ -257,8 +333,6 @@ int main(int argc, char *argv[])
 	// initialize python interpreter -- this is initialized AFTER sandbox is set up
 	// so that the python path can be faked (in essence, this allows for the parent proc
 	// to implement a pseudo-chroot by specifying a virtual path to python).
-	// This also ensures that anything done as part of the python initialization cannot
-	// be used as a means to break out of the sandbox.
 	programlen = mbstowcs(NULL, argv[1], 0) + 1;
 	program = (wchar_t *)malloc(programlen * sizeof(wchar_t));
 	if (mbstowcs(program, argv[1], programlen) == (size_t)-1) {
@@ -271,12 +345,10 @@ int main(int argc, char *argv[])
 	Py_Initialize();
 
 	// init the python side of things by populating libraries, etc.
-	// We expect that the parent proc provides a file which contains
-	// this initialization code, as well as the code to run whatever the user wanted.
-	mainpy = fopen("/lib/sandbox/init.py", "r");
+	mainpy = fopen("/usr/lib/sandbox/init.py", "r");
 	if (mainpy == NULL) {
 		ret = errno;
-		fprintf(stderr, "%s: Cannot open /lib/sandbox/init.py.\n", argv[0]);
+		fprintf(stderr, "%s: Cannot open init.py.\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -287,11 +359,12 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	// now run the user's code
+	// at this point, init is complete and we can begin to run user code.
+	// The parent is expected to provide a /tmp/main.py file for this.
 	mainpy = fopen("/tmp/main.py", "r");
 	if (mainpy == NULL) {
 		ret = errno;
-		fprintf(stderr, "%s: Cannot open /tmp/main.py.\n", argv[0]);
+		fprintf(stderr, "%s: Cannot open main.py.\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -342,7 +415,7 @@ void sigsys_handler(int signal, siginfo_t *siginfo, void *void_ctx)
 #ifdef SB_DEBUG	
 	fputs("Backtrace:\n", stderr);
 	void *buffer[32];
-	int n = backtrace(buffer, 50);
+	int n = backtrace(buffer, 32);
 	backtrace_symbols_fd(buffer, n, STDERR_FILENO);
 #endif
 

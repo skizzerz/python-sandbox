@@ -11,21 +11,20 @@ class Sandbox {
 	protected $proc = false;
 	protected $pipes = [];
 
-	public static function runNewSandbox( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath, $preloadPath ) {
-		$sb = new Sandbox( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath, $preloadPath );
+	public static function runNewSandbox( $pyVer, $pyBase, $sbBase ) {
+		$sb = new Sandbox( $pyVer, $pyBase, $sbBase );
 		return $sb->run();
 	}
 
-	public function __construct( $sbBinPath, $pyBinPath, $sbLibPath, $pyLibPath, $preloadPath ) {
-		$this->fs = new VirtualFS( $pyBinPath, $pyLibPath, $sbLibPath );
-		$this->sandboxPath = $sbBinPath;
+	public function __construct( $pyVer, $pyBase, $sbBase ) {
+		$this->fs = new VirtualFS( $pyVer, $pyBase, $sbBase );
+		$this->sandboxPath = "$sbBase/sandbox";
 		$this->env = [
-			'PYTHONHOME' => '/lib/python',
-			'PYTHONPATH' => '/lib/sandbox',
+			'PYTHONPATH' => '/usr/lib/sandbox',
 			'PYTHONDONTWRITEBYTECODE' => '1',
 			'PYTHONNOUSERSITE' => '1',
 			'PATH' => '/bin',
-			'LD_PRELOAD' => $preloadPath
+			'LD_PRELOAD' => "$sbBase/libsbpreload.so"
 		];
 	}
 
@@ -43,7 +42,8 @@ class Sandbox {
 		// proc_open spawns the subproc in a shell, which is not desirable here, so we use exec
 		// the child proc only has direct access to stdin/stdout/stderr during init, once the
 		// sandbox is established it can only read from 3 and write to 4.
-		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /bin/python 0 0",
+		$dynlibDir = $this->fs->getDynlibDir();
+		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /usr/bin/python 0 0 \"$dynlibDir\"",
 			[
 				0 => STDIN,
 				1 => STDOUT,
