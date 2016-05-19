@@ -11,7 +11,7 @@ const SB_GID = 1000;
 // can be registered in extensions via the configuration.
 const NS_SYS = 0; // syscall
 const NS_SB  = 1; // sandbox
-const NS_MW  = 2; // mediawiki
+const NS_APP = 2; // application
 
 // errno constants
 const EPERM     = 1;  // Operation not permitted

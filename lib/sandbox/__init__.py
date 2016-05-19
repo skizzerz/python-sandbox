@@ -8,7 +8,7 @@ __all__ = []
 # Sandbox namespaces
 NS_SYS = 0 # syscall
 NS_SB  = 1 # sandbox
-NS_MW  = 2 # mediawiki
+NS_APP = 2 # application
 
 # Pipes to the parent process
 _pipein = open(3, mode="rt", buffering=1, closefd=False)
@@ -16,7 +16,7 @@ _pipeout = open(4, mode="wt", buffering=1, closefd=False)
 
 # Function to send a request to the parent process and get the response back
 # We use JSON to serialize values back and forth
-def trampoline(name, *args, ns=NS_MW):
+def trampoline(name, *args, ns=NS_APP):
     obj = {"ns": ns, "name": name, "args": list(args)}
     serialized = json.dumps(obj, separators=(",", ":"))
     _pipeout.write(serialized + "\n")

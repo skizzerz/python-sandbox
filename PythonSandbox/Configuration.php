@@ -11,7 +11,11 @@ class Configuration {
 		'RPCHandlers' => [
 			NS_SYS => 'PythonSandbox\SyscallHandler',
 			NS_SB => 'PythonSandbox\SandboxHandler',
-			NS_MW => 'PythonSandbox\MediaWikiHandler'
+			// the application is expected to provide this class, or alternatively
+			// override this configuration with some other value. As such, it is not
+			// namespaced. Its constructor signature should be:
+			// public function __construct( PythonSandbox\Sandbox $sb )
+			NS_APP => 'ApplicationHandler'
 		],
 		// if extending this, sandbox.c should be extended and recompiled too
 		'AllowedLibs' => [

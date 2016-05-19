@@ -3,12 +3,19 @@
 namespace PythonSandbox;
 
 class VirtualFS {
+	protected $app = null;
 	protected $root = null;
 	protected $fds = [];
 	protected $cwd = '/tmp';
 	protected $dynlibDir = '';
 
-	public function __construct( $pyVer, $pyBase, $sbBase ) {
+	public function __construct( Application $app ) {
+		$this->app = $app;
+		$pyVer = $app->getPythonVersion();
+		$pyBase = $app->getPythonBasePath();
+		$sbBase = $app->getSandboxBasePath();
+		$config = $app->getConfigurationInstance();
+
 		$pyVerDir = false;
 		$libDir = 'lib';
 		if ( file_exists( "$pyBase/lib64/$pyVer" ) ) {
@@ -23,8 +30,10 @@ class VirtualFS {
 		}
 
 		$this->dynlibDir = "$pyVerDir/lib-dynload";
-		$allowedLibs = Configuration::singleton()->get( 'AllowedLibs' );
+		$allowedLibs = $config->get( 'AllowedLibs' );
 
+		// initialize directories required by the sandbox itself, the application will
+		// have the ability to add to this afterwards
 		$this->root = new VirtualDir( $this, '' );
 		$this->root[] = new VirtualDir( $this, 'usr' );
 		$this->root['usr'][] = new VirtualDir( $this, 'lib' );
@@ -38,8 +47,8 @@ class VirtualFS {
 		$this->root['usr']['lib'][] = new RealDir( $this, 'sandbox', "$sbBase/lib",
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
-		// TODO: main.py should contain automatically generated code that shells out the appropriate module
-		$this->root['tmp'][] = new RealFile( $this, 'main.py', "$sbBase/main.py" );
+		$this->root['tmp'][] = $app->getInitScriptNode( $this, 'init.py' );
+		$this->root['tmp'][] = $app->getUserScriptNode( $this, 'main.py' );
 		$this->root[] = new RealDir( $this, 'dev', '/dev',
 			[ 'fileWhitelist' => [ 'urandom' ] ] );
 
@@ -54,6 +63,10 @@ class VirtualFS {
 			$this->root['usr'][$libDir][$pyVer][] =
 				new VirtualFile( $this, 'orig-prefix.txt', '/' );
 		}
+
+		// Let the application set up its own directories, for example it may wish to add a new
+		// lib directory for its own libraries.
+		$app->initializeFilesystem( $this->root );
 
 		// init stdin/out/err so that fstat can be called on them
 		$this->fds[0] = new StatOnlyFD( $this->root, STDIN );
@@ -109,7 +122,7 @@ class VirtualFS {
 			throw new SyscallException( EROFS );
 		}
 
-		$maxfds = Configuration::singleton()->get( 'MaxFDs' );
+		$maxfds = $this->app->getConfigurationInstance()->get( 'MaxFDs' );
 		for ( $i = 5; $i < $maxfds; ++$i ) {
 			if ( !isset( $this->fds[$i] ) ) {
 				$this->fds[$i] = $node->open( $flags, $mode );
@@ -154,7 +167,7 @@ class VirtualFS {
 	}
 
 	public function read( $fd, $length ) {
-		$maxlen = Configuration::singleton()->get( 'MaxReadLength' );
+		$maxlen = $this->app->getConfigurationInstance()->get( 'MaxReadLength' );
 		if ( $length > $maxlen ) {
 			$length = $maxlen;
 		}
@@ -187,7 +200,7 @@ class VirtualFS {
 	public function dup( $oldFd, $newFd = 0, $exactFd = false ) {
 		$this->validateFd( $oldFd, true );
 
-		$maxfds = Configuration::singleton()->get( 'MaxFDs' );
+		$maxfds = $this->app->getConfigurationInstance()->get( 'MaxFDs' );
 		if ( $newFd !== 0 && ( ( $newFd < 5 && $exactFd ) || $newFd >= $maxFds ) ) {
 			throw new SyscallException( EINVAL );
 		} elseif ( $newFd === 0 && $exactFd ) {
