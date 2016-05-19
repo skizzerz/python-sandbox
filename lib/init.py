@@ -7,9 +7,9 @@
 # This saves modules from needing a lot of import statement boilerplate
 # and also matches the lua API in autoloading these libraries
 import mw
+import mw.language
+import mw.message
 import mw.html
-#import mw.language
-#import mw.message
 #import mw.site
 #import mw.text
 #import mw.title

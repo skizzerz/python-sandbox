@@ -5,6 +5,7 @@ namespace PythonSandbox;
 require_once 'Constants.php';
 
 class Sandbox {
+	protected $initialized = false;
 	protected $fs = null;
 	protected $env = [];
 	protected $sandboxPath = '';
@@ -59,11 +60,11 @@ class Sandbox {
 
 		stream_set_blocking( $this->pipes[3], false );
 		stream_set_blocking( $this->pipes[4], false );
-		$handler = new SyscallHandler( $this, $this->pipes[4], $this->pipes[3] );
+		$server = new RPCServer( $this, $this->pipes[4], $this->pipes[3] );
 
 		try {
 			// this loops until an error is encountered or the child process finishes
-			$handler->run();
+			$server->run();
 		} catch ( SandboxException $e ) {
 			// no-op; we throw SandboxException whenever we encounter a condition wherein we wish
 			// to immediately close the sandbox without also raising an exception in our parent process.
@@ -95,5 +96,13 @@ class Sandbox {
 
 	public function getfs() {
 		return $this->fs;
+	}
+
+	public function isInitialized() {
+		return $this->initialized;
+	}
+
+	public function setInitialized() {
+		$this->initialized = true;
 	}
 }

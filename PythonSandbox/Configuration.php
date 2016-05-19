@@ -8,6 +8,11 @@ class Configuration {
 	protected $config = [
 		'MaxFDs' => 64,
 		'MaxReadLength' => 8192,
+		'RPCHandlers' => [
+			NS_SYS => 'PythonSandbox\SyscallHandler',
+			NS_SB => 'PythonSandbox\SandboxHandler',
+			NS_MW => 'PythonSandbox\MediaWikiHandler'
+		],
 		// if extending this, sandbox.c should be extended and recompiled too
 		'AllowedLibs' => [
 			'*.py',

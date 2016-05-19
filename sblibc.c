@@ -142,7 +142,7 @@ void _debug_backtrace() {
 
 void fatal(const char *msg)
 {
-	fprintf(stderr, "*** %s ***: sandbox terminated\n", msg);
+	debug_error("*** %s ***: sandbox terminated\n", msg);
 	exit(1);
 }
 
@@ -153,11 +153,12 @@ void fatal(const char *msg)
 #endif
 
 // we send a JSON line containing the call in the following format:
-// {"name": "str", "args": [any...]}
+// {"ns": int, "name": "str", "args": [any...]}
 // we then get a JSON reply in the following format:
-// {"code": int, "errno": int, "data": any}
-// (errno and data are optional keys, code is required)
-int trampoline(struct json_object **out, const char *fname, int numargs, ...)
+// {"code": int, "errno": int, "data": any, "base64": bool}
+// (errno, data, and base64 are optional keys, code is required; base64 indicates
+// the data is base64-encoded)
+int trampoline(struct json_object **out, int ns, const char *fname, int numargs, ...)
 {
 	va_list vargs;
 	int ret = 0, i;
@@ -168,6 +169,7 @@ int trampoline(struct json_object **out, const char *fname, int numargs, ...)
 	json_object *json_data = NULL;
 	json_object *name = json_object_new_string(fname);
 	json_object *args = json_object_new_array();
+	json_object *namespace = json_object_new_int(ns);
 
 	va_start(vargs, numargs);
 	for (i = 0; i < numargs; ++i) {
@@ -175,19 +177,20 @@ int trampoline(struct json_object **out, const char *fname, int numargs, ...)
 	}
 	va_end(vargs);
 
+	json_object_object_add(callinfo, "ns", namespace);
 	json_object_object_add(callinfo, "name", name);
 	json_object_object_add(callinfo, "args", args);
 
 	ret = writejson(json_object_to_json_string_ext(callinfo, SB_JSON_FLAGS));
 	if (ret < 0) {
 		debug_error("writejson failed with errno %d\n", errno);
-		exit(errno);
+		exit(-errno);
 	}
 
 	ret = readjson(&response);
 	if (ret < 0) {
 		debug_error("readjson failed with errno %d\n", errno);
-		exit(errno);
+		exit(-errno);
 	}
 
 	if (!json_object_is_type(response, json_type_object)) {

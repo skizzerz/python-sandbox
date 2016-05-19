@@ -2,7 +2,7 @@
 
 namespace PythonSandbox;
 
-class SyscallException extends \RuntimeException {
+class SyscallException extends RPCException {
 	public function __construct( $code, $message = null, \Exception $previous = null ) {
 		if ( $previous === null && $message instanceOf \Exception ) {
 			$previous = $message;

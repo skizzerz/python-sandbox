@@ -7,6 +7,12 @@ namespace PythonSandbox;
 const SB_UID = 1000;
 const SB_GID = 1000;
 
+// built-in sandbox namespaces for RPCs. Additional namespaces
+// can be registered in extensions via the configuration.
+const NS_SYS = 0; // syscall
+const NS_SB  = 1; // sandbox
+const NS_MW  = 2; // mediawiki
+
 // errno constants
 const EPERM     = 1;  // Operation not permitted
 const ENOENT    = 2;  // No such file or directory

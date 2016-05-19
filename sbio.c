@@ -33,7 +33,7 @@ SYS(open)
 		// json-c init tries to open /dev/urandom with O_RDONLY
 		// as such, we need to hardcode the json string request since
 		// we cannot rely on json-c to do it for us
-		int ret = writejson("{\"name\":\"open\",\"args\":[\"/dev/urandom\",0],\"raw\":true}");
+		int ret = writejson("{\"ns\":0,\"name\":\"open\",\"args\":[\"/dev/urandom\",0],\"raw\":true}");
 
 		if (ret < 0) {
 			debug_error("writejson failed with errno %d\n", errno);
@@ -58,7 +58,7 @@ SYS(open)
 		arg3 = json_object_new_int(mode);
 	}
 
-	return trampoline(NULL, "open", numargs, arg1, arg2, arg3);
+	return trampoline(NULL, NS_SYS, "open", numargs, arg1, arg2, arg3);
 }
 
 SYS(fcntl)
@@ -144,7 +144,7 @@ SYS(fcntl)
 		}
 	}
 
-	return trampoline(NULL, "fcntl", numargs, arg1, arg2, arg3);
+	return trampoline(NULL, NS_SYS, "fcntl", numargs, arg1, arg2, arg3);
 }
 
 SYS(close)
@@ -158,7 +158,7 @@ SYS(close)
 
 		urandom_fd = -1;
 
-		snprintf(buf, 64, "{\"name\":\"close\",\"args\":[%d],\"raw\":true}", fd);
+		snprintf(buf, 64, "{\"ns\":0,\"name\":\"close\",\"args\":[%d],\"raw\":true}", fd);
 		ret = writejson(buf);
 		if (ret < 0) {
 			debug_error("writejson failed with errno %d\n", errno);
@@ -176,7 +176,7 @@ SYS(close)
 
 	json_object *arg1 = json_object_new_int(fd);
 
-	return trampoline(NULL, "close", 1, arg1);
+	return trampoline(NULL, NS_SYS, "close", 1, arg1);
 }
 
 SYS(read)
@@ -192,7 +192,7 @@ SYS(read)
 		// still in json init, so hardcode a raw read
 		char *buf2 = (char *)malloc(65536);
 
-		snprintf(buf2, 65536, "{\"name\":\"read\",\"args\":[%d,%u],\"raw\":true}", fd, (unsigned int)count);
+		snprintf(buf2, 65536, "{\"ns\":0,\"name\":\"read\",\"args\":[%d,%u],\"raw\":true}", fd, (unsigned int)count);
 		ret = writejson(buf2);
 		if (ret < 0) {
 			debug_error("writejson failed with errno %d\n", errno);
@@ -226,7 +226,7 @@ SYS(read)
 	json_object *out = NULL;
 	json_object *data = NULL;
 
-	code = trampoline(&out, "read", 2, arg1, arg2);
+	code = trampoline(&out, NS_SYS, "read", 2, arg1, arg2);
 	if (code <= 0) {
 		json_object_put(out);
 		return code;
@@ -276,7 +276,7 @@ SYS(stat)
 	int code = 0;
 
 	if (!strcmp("/dev/urandom", path)) {
-		ret = writejson("{\"name\":\"stat\",\"args\":[\"/dev/urandom\"],\"raw\":true}");
+		ret = writejson("{\"ns\":0,\"name\":\"stat\",\"args\":[\"/dev/urandom\"],\"raw\":true}");
 		if (ret < 0) {
 			debug_error("writejson failed with errno %d\n", errno);
 			exit(errno);
@@ -300,7 +300,7 @@ SYS(stat)
 	json_object *data = NULL;
 	json_object *fld = NULL;
 
-	ret = trampoline(&out, "stat", 1, arg1);
+	ret = trampoline(&out, NS_SYS, "stat", 1, arg1);
 	if (ret != 0) {
 		json_object_put(out);
 		return ret;
@@ -378,7 +378,7 @@ SYS(lstat)
 	json_object *data = NULL;
 	json_object *fld = NULL;
 
-	ret = trampoline(&out, "lstat", 1, arg1);
+	ret = trampoline(&out, NS_SYS, "lstat", 1, arg1);
 	if (ret != 0) {
 		json_object_put(out);
 		return ret;
@@ -456,7 +456,7 @@ SYS(fstat)
 	json_object *data = NULL;
 	json_object *fld = NULL;
 
-	ret = trampoline(&out, "fstat", 1, arg1);
+	ret = trampoline(&out, NS_SYS, "fstat", 1, arg1);
 	if (ret != 0) {
 		json_object_put(out);
 		return ret;
@@ -535,7 +535,7 @@ SYS(readlink)
 	json_object *data = NULL;
 	const char *str;
 
-	ret = trampoline(&out, "readlink", 1, arg1);
+	ret = trampoline(&out, NS_SYS, "readlink", 1, arg1);
 	if (ret <= 0) {
 		json_object_put(out);
 		return ret;
@@ -585,7 +585,7 @@ SYS(openat)
 		arg4 = json_object_new_int(mode);
 	}
 
-	return trampoline(NULL, "openat", numargs, arg1, arg2, arg3, arg4);
+	return trampoline(NULL, NS_SYS, "openat", numargs, arg1, arg2, arg3, arg4);
 }
 
 struct linux_dirent {
@@ -620,7 +620,7 @@ SYS(getdents)
 	json_object *obj = NULL;
 	json_object *fld = NULL;
 
-	ret = trampoline(&out, "getdents", 3, arg1, arg2, arg3);
+	ret = trampoline(&out, NS_SYS, "getdents", 3, arg1, arg2, arg3);
 	if (ret <= 0) {
 		json_object_put(out);
 		return ret;
@@ -715,7 +715,7 @@ SYS(lseek)
 	json_object *arg2 = json_object_new_int64(offset);
 	json_object *arg3 = json_object_new_int(whence);
 
-	return trampoline(NULL, "lseek", 3, arg1, arg2, arg3);
+	return trampoline(NULL, NS_SYS, "lseek", 3, arg1, arg2, arg3);
 }
 
 SYS(dup)
@@ -724,5 +724,5 @@ SYS(dup)
 
 	json_object *arg1 = json_object_new_int(oldfd);
 
-	return trampoline(NULL, "dup", 1, arg1);
+	return trampoline(NULL, NS_SYS, "dup", 1, arg1);
 }

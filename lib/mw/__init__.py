@@ -1,10 +1,35 @@
+import sys
+
 from sandbox import trampoline
 
 __all__ = ["Frame", "allToString", "clone", "getCurrentFrame", "incrementExpensiveFunctionCount",
-           "isSubsting", "loadData", "dumpObject", "log", "logObject"]
+           "isSubsting", "loadData", "dumpObject", "log", "logObject", "moduleclass", "modulemethod",
+           "getWikiArgs"]
 
 # Object representing an undefined value, for use in functions that have overloads
 undefined = tuple()
+
+# Decorators to declare a class and its methods as callable via {{#invoke}}
+# only one class per module can be decorated with moduleclass
+def moduleclass(cls):
+    modvars = sys.modules[cls.__module__].__dict__
+    if "_ScribuntoPython_Module" in modvars:
+        import mw.message as msg
+        # Only one class may be decorated with @mw.moduleclass in a module
+        raise RuntimeError(msg.new("scribuntopython-duplicate-moduleclass").plain())
+    modvars["_ScribuntoPython_Module"] = cls
+    return cls
+
+def modulemethod(func):
+    return staticmethod(func)
+
+# Utility function to transform a varargs list into wiki arguments
+# This also renumbers numeric arguments to begin at 1 instead of 0,
+# to match how mediawiki parses them (both in templates and i18n messages)
+def getWikiArgs(args=[], kwargs={}):
+    wiki_args = {i + 1: v for i, v in args.items()}
+    wiki_args.update(kwargs)
+    return wiki_args
 
 # Cache of created Frame objects
 _framecache = {}
@@ -20,19 +45,19 @@ class Frame:
     # unpacking is super easy in python and it would add a lot of complexity
     # if we had to detect if we were passed a list/dict/whatever and act accordingly
     def callParserFunction(self, name, *args, **kwargs):
-        wiki_args = self._getWikiArgs(args, kwargs)
+        wiki_args = getWikiArgs(args, kwargs)
         return trampoline("frame_callParserFunction", self._frame_id, name, wiki_args)
 
     def expandTemplate(self, title, *args, **kwargs):
-        wiki_args = self._getWikiArgs(args, kwargs)
+        wiki_args = getWikiArgs(args, kwargs)
         return trampoline("frame_expandTemplate", self._frame_id, title, wiki_args)
 
     def extensionTag(self, name, content, *args, **kwargs):
-        wiki_args = self._getWikiArgs(args, kwargs)
+        wiki_args = getWikiArgs(args, kwargs)
         return trampoline("frame_extensionTag", self._frame_id, name, content, wiki_args)
 
     def getParent(self):
-        parent = _trampoline("frame_getParent", self._frame_id)
+        parent = trampoline("frame_getParent", self._frame_id)
         if parent["id"] not in _framecache:
             _framecache[parent["id"]] = Frame(parent["id"], parent["title"])
         return _framecache[parent["id"]]
@@ -41,7 +66,7 @@ class Frame:
         return self.title
 
     def newChild(self, title, *args, **kwargs):
-        wiki_args = self._getWikiArgs(args, kwargs)
+        wiki_args = getWikiArgs(args, kwargs)
         child = trampoline("frame_newChild", self._frame_id, wiki_args)
         f = Frame(child["id"], child["title"])
         _framecache[child["id"]] = f
@@ -64,12 +89,6 @@ class Frame:
 
     def argumentPairs(self):
         return self.args.items()
-
-    def _getWikiArgs(args=[], kwargs={}):
-        # Arguments on-wiki start at 1 for numbered arguments, not 0
-        wiki_args = {i + 1: v for i, v in args.items()}
-        wiki_args.update(kwargs)
-        return wiki_args
 
 class FrameArgs:
     def __init__(self, frame_id):

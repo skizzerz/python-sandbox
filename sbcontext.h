@@ -1,11 +1,16 @@
 struct json_object;
 
+// trampoline namespaces, at the C level we only care about the syscall and sandbox namespaces
+// the parent can define additional namespaces which the python libraries can call into
+#define NS_SYS 0
+#define NS_SB 1
+
 // The varargs in trampoline should all be json_object *'s.
 // If an error occurs, trampoline will set errno and return -1.
 // If out is not NULL, the response json_object * will be set there,
 // it is the caller's responsibility to free it with json_object_put()
 extern int dispatch(int (*func)(va_list), ...);
-extern int trampoline(struct json_object **out, const char *fname, int numargs, ...);
+extern int trampoline(struct json_object **out, int ns, const char *fname, int numargs, ...);
 extern void fatal(const char *msg) __attribute__ ((noreturn));
 extern int writejson(const char *json);
 extern int readjson(struct json_object **out);

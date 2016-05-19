@@ -38,6 +38,8 @@ class VirtualFS {
 		$this->root['usr']['lib'][] = new RealDir( $this, 'sandbox', "$sbBase/lib",
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
+		// TODO: main.py should contain automatically generated code that shells out the appropriate module
+		$this->root['tmp'][] = new RealFile( $this, 'main.py', "$sbBase/main.py" );
 		$this->root[] = new RealDir( $this, 'dev', '/dev',
 			[ 'fileWhitelist' => [ 'urandom' ] ] );
 
