@@ -344,20 +344,50 @@ int main(int argc, char *argv[])
 	Py_SetProgramName(program);
 	Py_Initialize();
 
-	// init the python side of things by populating libraries, etc.
-	mainpy = fopen("/usr/lib/sandbox/init.py", "r");
-	if (mainpy == NULL) {
-		ret = errno;
-		fprintf(stderr, "%s: Cannot open init.py.\n", argv[0]);
+	// optional user init code
+	mainpy = fopen("/tmp/init.py", "r");
+	if (mainpy != NULL) {
+		// this closes mainpy after completion so we don't need to fclose it in cleanup
+		ret = PyRun_SimpleFile(mainpy, "init.py");
+		if (ret != 0) {
+			fprintf(stderr, "%s: init.py returned error %d.\n", argv[0], ret);
+			goto cleanup;
+		}
+	}
+
+	// notify the parent sandbox that we have completed initialization
+	PyObject *sandbox, *complete_init, *complete_init_ret;
+	sandbox = PyImport_ImportModule("sandbox");
+	if (sandbox == NULL) {
+		PyErr_Print();
+		fprintf(stderr, "%s: unable to import sandbox module.\n", argv[0]);
+		ret = -1;
 		goto cleanup;
 	}
 
-	// this closes mainpy after completion so we don't need to fclose it in cleanup
-	ret = PyRun_SimpleFile(mainpy, "init.py");
-	if (ret != 0) {
-		fprintf(stderr, "%s: init.py returned error %d.\n", argv[0], ret);
+	complete_init = PyObject_GetAttrString(sandbox, "complete_init");
+	if (complete_init == NULL || !PyCallable_Check(complete_init)) {
+		if (PyErr_Occurred()) {
+			PyErr_Print();
+		}
+
+		fprintf(stderr, "%s: cannot run sandbox.complete_init().\n", argv[0]);
+		ret = -1;
+		Py_XDECREF(complete_init);
 		goto cleanup;
 	}
+
+	complete_init_ret = PyObject_CallObject(complete_init, NULL);
+	if (complete_init_ret == NULL) {
+		PyErr_Print();
+		fprintf(stderr, "%s: error running sandbox.complete_init().\n", argv[0]);
+		ret = -1;
+		goto cleanup;
+	}
+
+	Py_DECREF(complete_init_ret);
+	Py_DECREF(complete_init);
+	Py_DECREF(sandbox);
 
 	// at this point, init is complete and we can begin to run user code.
 	// The parent is expected to provide a /tmp/main.py file for this.

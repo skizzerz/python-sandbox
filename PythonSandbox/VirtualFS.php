@@ -66,7 +66,7 @@ class VirtualFS {
 
 		// Let the application set up its own directories, for example it may wish to add a new
 		// lib directory for its own libraries.
-		$app->initializeFilesystem( $this->root );
+		$app->initializeFilesystem( $this );
 
 		// init stdin/out/err so that fstat can be called on them
 		$this->fds[0] = new StatOnlyFD( $this->root, STDIN );
@@ -98,6 +98,10 @@ class VirtualFS {
 		}
 
 		return $node;
+	}
+
+	public function getRoot() {
+		return $this->root;
 	}
 
 	public function getDynlibDir() {

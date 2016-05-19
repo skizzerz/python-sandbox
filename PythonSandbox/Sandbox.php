@@ -5,6 +5,7 @@ namespace PythonSandbox;
 require_once 'Constants.php';
 
 class Sandbox {
+	protected $app = null;
 	protected $initialized = false;
 	protected $fs = null;
 	protected $env = [];
@@ -12,21 +13,41 @@ class Sandbox {
 	protected $proc = false;
 	protected $pipes = [];
 
-	public static function runNewSandbox( $pyVer, $pyBase, $sbBase ) {
-		$sb = new Sandbox( $pyVer, $pyBase, $sbBase );
+	public static function runNewSandbox( Application $app ) {
+		$sb = new Sandbox( $app );
 		return $sb->run();
 	}
 
-	public function __construct( $pyVer, $pyBase, $sbBase ) {
-		$this->fs = new VirtualFS( $pyVer, $pyBase, $sbBase );
+	public function __construct( Application $app ) {
+		$this->app = $app;
+		$this->fs = $app->getFilesystemInstance();
+
+		$sbBase = $app->getSandboxBasePath();
 		$this->sandboxPath = "$sbBase/sandbox";
+
+		$paths = $app->getLibraryPaths();
+		if ( !is_array( $paths ) ) {
+			$paths = [ $paths ];
+		}
+
+		$paths = implode( ':', $paths );
+		if ( $paths !== '' ) {
+			$paths = ':' . $paths;
+		}
+
 		$this->env = [
-			'PYTHONPATH' => '/usr/lib/sandbox',
+			'PYTHONPATH' => '/usr/lib/sandbox' . $paths,
 			'PYTHONDONTWRITEBYTECODE' => '1',
 			'PYTHONNOUSERSITE' => '1',
 			'PATH' => '/bin',
 			'LD_PRELOAD' => "$sbBase/libsbpreload.so"
 		];
+
+		// give the application the ability to perform further sandbox init;
+		// for example, by calling $sb->setenv() to modify environment vars
+		// this advanced init is generally not required, as getLibraryPaths()
+		// covers the most common use case (injecting directories into the python search path)
+		$app->initializeSandbox( $this );
 	}
 
 	public function __destruct() {
@@ -44,7 +65,10 @@ class Sandbox {
 		// the child proc only has direct access to stdin/stdout/stderr during init, once the
 		// sandbox is established it can only read from 3 and write to 4.
 		$dynlibDir = $this->fs->getDynlibDir();
-		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /usr/bin/python 0 0 \"$dynlibDir\"",
+		$config = $this->app->getConfigurationInstance();
+		$memLimit = $config->get( 'MemoryLimit' );
+		$cpuLimit = $config->get( 'CPULimit' );
+		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /usr/bin/python $memLimit $cpuLimit \"$dynlibDir\"",
 			[
 				0 => STDIN,
 				1 => STDOUT,
