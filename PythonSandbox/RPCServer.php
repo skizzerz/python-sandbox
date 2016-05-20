@@ -22,7 +22,7 @@ class RPCServer {
 		}
 
 		// this function loops until the child proc finishes or we get an exception
-		// (other than SyscallException which indicate we should pass error down to child).
+		// (other than RPCException which indicate we should pass error down to child).
 		while ( true ) {
 			// marshal format is line based, each line has one json object
 			// input: {"name": "fname", "args": [...]}
@@ -73,15 +73,24 @@ class RPCServer {
 					$errno = 0;
 					$data = null;
 
-					if ( is_array( $ret ) ) {
-						list( $ret, $data ) = $ret;
-					} elseif ( $ret === null ) {
+					if ( $call->ns === NS_SYS ) {
+						if ( is_array( $ret ) ) {
+							list( $ret, $data ) = $ret;
+						}
+					} else {
+						$data = $ret;
 						$ret = 0;
 					}
 				} catch ( RPCException $e ) {
-					$ret = -1;
-					$errno = $e->getCode();
-					$data = $e->getMessage();
+					if ($call->ns === NS_SYS) {
+						$ret = -1;
+						$errno = $e->getErrno();
+						$data = $e->getMessage();
+					} else {
+						$ret = $e->getCode();
+						$data = $e->getMessage();
+						$errno = $e->getErrno();
+					}
 				}
 
 				if ( $raw ) {

@@ -23,7 +23,7 @@ abstract class Application {
 		return new VirtualFS( $this );
 	}
 
-	public function initializeFilesystem( Node $root ) {
+	public function initializeFilesystem( VirtualFS $fs ) {
 		// no-op, a subclass can override this if it wishes to do something here
 	}
 

@@ -13,6 +13,22 @@ const NS_SYS = 0; // syscall
 const NS_SB  = 1; // sandbox
 const NS_APP = 2; // application
 
+// python exception constants; these are CamelCase to match python's naming
+const ImportError         = 1;
+const IndexError          = 2;
+const KeyError            = 3;
+const MemoryError         = 4;
+const NotImplementedError = 5;
+const OSError             = 6;
+const OverflowError       = 7;
+const RuntimeError        = 8;
+const StopIteration       = 9;
+const StopAsyncIteration  = 10;
+const SyntaxError         = 11;
+const TypeError           = 12;
+const ValueError          = 13;
+const ZeroDivisionError   = 14;
+
 // errno constants
 const EPERM     = 1;  // Operation not permitted
 const ENOENT    = 2;  // No such file or directory

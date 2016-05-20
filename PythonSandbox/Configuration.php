@@ -46,16 +46,14 @@ class Configuration {
 
 	protected function __construct() { }
 
+	// this method should never be called directly, use Application::getConfigurationInstance()
+	// instead so that user code can return a subclass if desired
 	public static function singleton() {
 		if ( self::$instance === null ) {
 			self::$instance = new Configuration();
 		}
 
 		return self::$instance;
-	}
-
-	public static function setInstance( Configuration $instance ) {
-		self::$instance = $instance;
 	}
 
 	public function exists( $key ) {
