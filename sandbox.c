@@ -18,36 +18,6 @@
 #include "sbcontext.h"
 #include "sblibc.h"
 
-// these libraries are preloaded for use inside of python
-// trailing . is important, be sure to include it
-struct libname {
-	const char *name;
-	int len;
-};
-
-struct libname libs[] = {
-	{ "array.", 6 },
-	{ "binascii.", 9 },
-	{ "_bisect.", 8 },
-	{ "cmath.", 6 },
-	{ "_codecs_", 8 }, // no trailing . since this specifies multiple codecs
-	{ "_csv.", 5 },
-	{ "_datetime.", 10 },
-	{ "_decimal.", 9 },
-	{ "_elementtree.", 13 },
-	{ "_heapq.", 7 },
-	{ "_json.", 6 },
-	{ "_lsprof.", 8 },
-	{ "math.", 5 },
-	{ "_multibytecodec.", 16 },
-	{ "pyexpat.", 8 },
-	{ "_random.", 8 },
-	{ "resource.", 9 },
-	{ "_struct.", 8 },
-	{ "unicodedata.", 12 },
-	{ NULL, 0 }
-};
-
 void sigsys_handler(int signal, siginfo_t *info, void *context);
 
 int main(int argc, char *argv[])
@@ -71,7 +41,7 @@ int main(int argc, char *argv[])
 
 	// verify we have all necessary args and that fds 3 and 4 have been opened for us
 	if (argc < 4) {
-		fprintf(stderr, "Usage: %s path_to_python memory_limit_bytes cpu_limit_secs [preload_dir]\n", argv[0]);
+		fprintf(stderr, "Usage: %s path_to_python memory_limit_bytes cpu_limit_secs\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -84,11 +54,6 @@ int main(int argc, char *argv[])
 	ret = fcntl(PIPEOUT, F_GETFD);
 	if (ret < 0) {
 		fprintf(stderr, "%s: Must be run as a child process with fd 4 opened.\n", argv[0]);
-		goto cleanup;
-	}
-
-	if (argc > 4 && strlen(argv[4]) > 400) {
-		fprintf(stderr, "%s: dynlib dir name too large.\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -120,58 +85,18 @@ int main(int argc, char *argv[])
 	if (ret < 0)
 		goto cleanup;
 
-	// map any .so files that python needs, aka any .so in argv[4]
-	if (argc > 4) {
-		DIR *dp;
-		struct dirent *ep;
-		void *handle;
-		int i;
-		size_t ds = strlen(argv[4]);
-		char fnamebuf[512] = {0};
-		strncpy(fnamebuf, argv[4], 512);
-		if (fnamebuf[ds - 1] != '/') {
-			fnamebuf[ds] = '/';
-			fnamebuf[ds + 1] = 0;
-			++ds;
-		}
-
-		dp = opendir(argv[4]);
-		if (dp == NULL) {
-			fprintf(stderr, "%s: Could not open dynlib dir.\n", argv[0]);
-			goto cleanup;
-		}
-
-		while ((ep = readdir(dp))) {
-			for (i = 0; libs[i].name != NULL; ++i) {
-				if (!strncmp(ep->d_name, libs[i].name, libs[i].len)) {
-					strncpy(fnamebuf + ds, ep->d_name, 512 - ds);
-					fnamebuf[511] = 0;
-					handle = dlopen(fnamebuf, RTLD_LAZY | RTLD_NODELETE);
-					dlclose(handle);
-					break;
-				}
-			}
-		}
-
-		closedir(dp);
-	}
-
 	// set up our SIGSYS handler; any disallowed syscalls are trapped by this handler
 	// and sent up to the parent to process.
 	struct sigaction sa;
 	sigset_t mask;
-	// Allow other signals to interrupt our signal handler.
-	// If we're debugging, we also allow the signal handler to signal itself if it calls an invalid syscall.
+	// Allow other signals to interrupt our signal handler, including signals from ourself in case we implement
+	// a syscall by making other syscalls (our mmap implementation operates this way).
 	// This means that if the handler tries to make an invalid syscall, it will recurse until it
 	// fills up the stack space and crashes.
 	sigemptyset(&mask);
 	sa.sa_sigaction = sigsys_handler;
 	sa.sa_mask = mask;
-#ifdef SB_DEBUG
 	sa.sa_flags = SA_SIGINFO | SA_NODEFER;
-#else
-	sa.sa_flags = SA_SIGINFO;
-#endif
 	sigaction(SIGSYS, &sa, NULL);
 
 	/* set up seccomp, we allow the following syscalls:
@@ -180,9 +105,12 @@ int main(int argc, char *argv[])
 	 * - write(), writev() - fd 4 only (also stdout and stderr if in debug mode)
 	 * - fstat(), fcntl(F_GETFD), fcntl(F_GETFL) - fds 3 and 4 only
 	 * Memory:
-	 * - mmap(NULL, MAP_ANONYMOUS) - new mappings that don't read from fds, kernel chooses address
+	 * - mmap(MAP_ANONYMOUS | MAP_PRIVATE) - new mappings that don't read from fds,
+	 *   this still allows the application to choose a memory address, but this is unfortunately required
+	 *   in order for dlopen() to work (as that makes use of MAP_FIXED)
 	 * - brk() - memory allocation (we have setrlimit to keep this in check)
 	 * - munmap() - deallocation
+	 * - mprotect() - changing protection (used by our implementation of mmap for fds)
 	 * Signal Handlers:
 	 * - sigreturn(), rt_sigreturn(), rt_sigprocmask(), sigaltstack()
 	 * - rt_sigaction() - can retrieve all signals (2nd param NULL), cannot set handler for SIGSYS
@@ -260,8 +188,8 @@ int main(int argc, char *argv[])
 		goto cleanup;	
 #endif
 
-	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 2,
-			SCMP_A0(SCMP_CMP_EQ, NULL), SCMP_A3(SCMP_CMP_MASKED_EQ, MAP_ANONYMOUS, MAP_ANONYMOUS));
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mmap), 1,
+			SCMP_A3(SCMP_CMP_MASKED_EQ, MAP_ANONYMOUS | MAP_PRIVATE, MAP_ANONYMOUS | MAP_PRIVATE));
 	if (ret < 0)
 		goto cleanup;
 
@@ -270,6 +198,10 @@ int main(int argc, char *argv[])
 		goto cleanup;
 
 	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(munmap), 0);
+	if (ret < 0)
+		goto cleanup;
+
+	ret = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, SCMP_SYS(mprotect), 0);
 	if (ret < 0)
 		goto cleanup;
 

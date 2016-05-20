@@ -9,13 +9,14 @@ struct json_object;
 // If an error occurs, trampoline will set errno and return -1.
 // If out is not NULL, the response json_object * will be set there,
 // it is the caller's responsibility to free it with json_object_put()
-extern int dispatch(int (*func)(va_list), ...);
+extern intptr_t dispatch(intptr_t (*func)(va_list), ...);
 extern int trampoline(struct json_object **out, int ns, const char *fname, int numargs, ...);
 extern void fatal(const char *msg) __attribute__ ((noreturn));
 extern int writejson(const char *json);
 extern int readjson(struct json_object **out);
 extern int readraw(const char *format, ...);
 extern int base64decode(const char *in, size_t inLen, unsigned char *out, size_t *outLen);
+extern void _debug_backtrace();
 
 // O_TMPFILE was added in kernel 3.11, some distros are still stuck on older versions
 // (for example, CentOS 7 is on 3.10). As such, ignore the flag

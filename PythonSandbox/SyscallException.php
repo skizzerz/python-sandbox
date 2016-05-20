@@ -3,16 +3,11 @@
 namespace PythonSandbox;
 
 class SyscallException extends RPCException {
-	public function __construct( $code, $message = null, \Exception $previous = null ) {
-		if ( $previous === null && $message instanceOf \Exception ) {
-			$previous = $message;
-			$message = null;
-		}
-
+	public function __construct( $code, $message = null ) {
 		if ( $message === null ) {
 			$message = SandboxUtil::strerror( $code );
 		}
 
-		parent::__construct( $message, $code, $previous );
+		parent::__construct( $message, -1, $code );
 	}
 }

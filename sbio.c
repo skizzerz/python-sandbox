@@ -11,6 +11,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/cdefs.h>
+#include <sys/mman.h>
 #include <signal.h>
 #include <dirent.h>
 
@@ -725,4 +726,62 @@ SYS(dup)
 	json_object *arg1 = json_object_new_int(oldfd);
 
 	return trampoline(NULL, NS_SYS, "dup", 1, arg1);
+}
+
+// we do not forward mmap calls as-is
+// anonymous mappings are directly allowed, so this is only called when
+// we are asked to mmap a file. As such, we perform an anonymous mmap,
+// read in the file to it, then fix the flags on it and return that address.
+// This is doable because when python asks us to mmap a file for a .so,
+// it opens the file first so the fd passed to us is also open in our parent.
+// Therefore, we lseek() it to the beginning, re-read() it, and return it.
+SYS(mmap)
+{
+	void *addr = va_arg(args, void *);
+	size_t length = va_arg(args, size_t);
+	int prot = va_arg(args, int);
+	int flags = va_arg(args, int);
+	int fd = va_arg(args, int);
+	off_t offset = va_arg(args, int);
+
+	if (flags & (MAP_SHARED | MAP_GROWSDOWN | MAP_STACK)) {
+		errno = EPERM;
+		debug_error("mmap flags has disallowed values\n");
+		return (intptr_t)MAP_FAILED;
+	}
+
+	void *mem = mmap(addr, length, PROT_READ | PROT_WRITE, flags | MAP_ANONYMOUS, -1, 0);
+	if (mem == MAP_FAILED) {
+		debug_error("mmap call failed with errno %d\n", errno);
+		return (intptr_t)MAP_FAILED;
+	}
+
+	if (lseek(fd, offset, SEEK_SET) == -1) {
+		debug_error("lseek call failed\n");
+		munmap(mem, length);
+		return (intptr_t)MAP_FAILED;
+	}
+
+	size_t num_read = 0;
+	int ret;
+	while (num_read < length) {
+		ret = read(fd, mem + num_read, length - num_read);
+		if (ret == 0) {
+			break;
+		} else if (ret < 0) {
+			debug_error("read call failed\n");
+			munmap(mem, length);
+			return (intptr_t)MAP_FAILED;
+		}
+
+		num_read += ret;
+	}
+
+	if (mprotect(mem, length, prot) != 0) {
+		debug_error("mprotect call failed\n");
+		munmap(mem, length);
+		return (intptr_t)MAP_FAILED;
+	}
+
+	return (intptr_t)mem;
 }

@@ -18,9 +18,9 @@
 static FILE *pipeout = NULL;
 static FILE *pipein = NULL;
 
-int dispatch(int (*func)(va_list), ...)
+intptr_t dispatch(intptr_t (*func)(va_list), ...)
 {
-	int ret;
+	intptr_t ret;
 	va_list args;
 
 	va_start(args, func);
@@ -328,6 +328,7 @@ const struct sys_arg_map arg_map[] = {
 	ASYS(getdents, 3),
 	ASYS(lseek, 3),
 	ASYS(dup, 1),
+	ASYS(mmap, 6),
 	{ NULL, 0, NULL }
 };
 

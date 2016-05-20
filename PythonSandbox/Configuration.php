@@ -19,28 +19,14 @@ class Configuration {
 			// public function __construct( PythonSandbox\Sandbox $sb )
 			NS_APP => 'ApplicationHandler'
 		],
-		// if extending this, sandbox.c should be extended and recompiled too
-		'AllowedLibs' => [
+		'AllowedPythonLibs' => [
 			'*.py',
-			'array.*.so',
-			'binascii.*.so',
-			'_bisect.*.so',
-			'cmath.*.so',
-			'_codecs_*.so',
-			'_csv.*.so',
-			'_datetime.*.so',
-			'_decimal.*.so',
-			'_elementtree.*.so',
-			'_heapq.*.so',
-			'_json.*.so',
-			'_lsprof.*.so',
-			'math.*.so',
-			'_multibytecodec.*.so',
-			'pyexpat.*.so',
-			'_random.*.so',
-			'resource.*.so',
-			'_struct.*.so',
-			'unicodedata.*.so'
+			'*.so'
+		],
+		'AllowedSystemLibs' => [
+			'*.so',
+			'*.so.[0-9]',
+			'*.so.[0-9][0-9]'
 		]
 	];
 

@@ -82,15 +82,9 @@ class RPCServer {
 						$ret = 0;
 					}
 				} catch ( RPCException $e ) {
-					if ($call->ns === NS_SYS) {
-						$ret = -1;
-						$errno = $e->getErrno();
-						$data = $e->getMessage();
-					} else {
-						$ret = $e->getCode();
-						$data = $e->getMessage();
-						$errno = $e->getErrno();
-					}
+					$ret = $e->getCode();
+					$data = $e->getMessage();
+					$errno = $e->getErrno();
 				}
 
 				if ( $raw ) {

@@ -7,7 +7,6 @@ class VirtualFS {
 	protected $root = null;
 	protected $fds = [];
 	protected $cwd = '/tmp';
-	protected $dynlibDir = '';
 
 	public function __construct( Application $app ) {
 		$this->app = $app;
@@ -29,21 +28,27 @@ class VirtualFS {
 			throw new SandboxException( 'Unable to find python directory in pyLib' );
 		}
 
-		$this->dynlibDir = "$pyVerDir/lib-dynload";
-		$allowedLibs = $config->get( 'AllowedLibs' );
+		$allowedPyLibs = $config->get( 'AllowedPythonLibs' );
+		$allowedSysLibs = $config->get( 'AllowedSystemLibs' );
 
 		// initialize directories required by the sandbox itself, the application will
 		// have the ability to add to this afterwards
 		$this->root = new VirtualDir( $this, '' );
+		$this->root[] = new RealDir( $this, 'lib', '/lib',
+			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedSysLibs ] );
 		$this->root[] = new VirtualDir( $this, 'usr' );
-		$this->root['usr'][] = new VirtualDir( $this, 'lib' );
+		$this->root['usr'][] = new RealDir( $this, 'lib', '/usr/lib',
+			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedSysLibs ] );
 		if ( $libDir === 'lib64' ) {
-			$this->root['usr'][] = new VirtualDir( $this, 'lib64' );
+			$this->root[] = new RealDir( $this, 'lib64', '/lib64',
+				[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedSysLibs ] );
+			$this->root['usr'][] = new RealDir( $this, 'lib64', '/usr/lib64',
+				[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedSysLibs ] );
 		}
 		$this->root['usr'][] = new VirtualDir( $this, 'bin' );
 		$this->root['usr']['bin'][] = new RealFile( $this, 'python', "$pyBase/bin/python3" );
 		$this->root['usr'][$libDir][] = new RealDir( $this, $pyVer, $pyVerDir,
-			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedLibs ] );
+			[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedPyLibs ] );
 		$this->root['usr']['lib'][] = new RealDir( $this, 'sandbox', "$sbBase/lib",
 			[ 'recurse' => true, 'fileWhitelist' => [ '*.py' ] ] );
 		$this->root[] = new VirtualDir( $this, 'tmp' );
@@ -57,11 +62,12 @@ class VirtualFS {
 		// does not include every base python library (such as json).
 		if ( file_exists( "$pyVerDir/orig-prefix.txt" ) ) {
 			$prefix = file_get_contents( "$pyVerDir/orig-prefix.txt" );
-			$this->root[] = new VirtualDir( $this, $libDir );
-			$this->root[$libDir][] = new RealDir( $this, $pyVer, "$prefix/$libDir/$pyVer",
-				[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedLibs ] );
+			$this->root[] = new VirtualDir( $this, 'venv' );
+			$this->root['venv'][] = new VirtualDir( $this, $libDir );
+			$this->root['venv'][$libDir][] = new RealDir( $this, $pyVer, "$prefix/$libDir/$pyVer",
+				[ 'recurse' => true, 'followSymlinks' => true, 'fileWhitelist' => $allowedPyLibs ] );
 			$this->root['usr'][$libDir][$pyVer][] =
-				new VirtualFile( $this, 'orig-prefix.txt', '/' );
+				new VirtualFile( $this, 'orig-prefix.txt', '/venv' );
 		}
 
 		// Let the application set up its own directories, for example it may wish to add a new
@@ -102,10 +108,6 @@ class VirtualFS {
 
 	public function getRoot() {
 		return $this->root;
-	}
-
-	public function getDynlibDir() {
-		return $this->dynlibDir;
 	}
 
 	public function open( $path, $flags, $mode, $base ) {

@@ -64,11 +64,10 @@ class Sandbox {
 		// proc_open spawns the subproc in a shell, which is not desirable here, so we use exec
 		// the child proc only has direct access to stdin/stdout/stderr during init, once the
 		// sandbox is established it can only read from 3 and write to 4.
-		$dynlibDir = $this->fs->getDynlibDir();
 		$config = $this->app->getConfigurationInstance();
 		$memLimit = $config->get( 'MemoryLimit' );
 		$cpuLimit = $config->get( 'CPULimit' );
-		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /usr/bin/python $memLimit $cpuLimit \"$dynlibDir\"",
+		$this->proc = proc_open( "exec \"{$this->sandboxPath}\" /usr/bin/python $memLimit $cpuLimit",
 			[
 				0 => STDIN,
 				1 => STDOUT,
