@@ -70,8 +70,8 @@ int main(int argc, char *argv[])
 #endif
 
 	// verify we have all necessary args and that fds 3 and 4 have been opened for us
-	if (argc < 5) {
-		fprintf(stderr, "Usage: %s path_to_python memory_limit_bytes cpu_limit_secs preload_dir\n", argv[0]);
+	if (argc < 4) {
+		fprintf(stderr, "Usage: %s path_to_python memory_limit_bytes cpu_limit_secs [preload_dir]\n", argv[0]);
 		goto cleanup;
 	}
 
@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
-	if (strlen(argv[4]) > 400) {
+	if (argc > 4 && strlen(argv[4]) > 400) {
 		fprintf(stderr, "%s: dynlib dir name too large.\n", argv[0]);
 		goto cleanup;
 	}
@@ -121,38 +121,40 @@ int main(int argc, char *argv[])
 		goto cleanup;
 
 	// map any .so files that python needs, aka any .so in argv[4]
-	DIR *dp;
-	struct dirent *ep;
-	void *handle;
-	int i;
-	size_t ds = strlen(argv[4]);
-	char fnamebuf[512] = {0};
-	strncpy(fnamebuf, argv[4], 512);
-	if (fnamebuf[ds - 1] != '/') {
-		fnamebuf[ds] = '/';
-		fnamebuf[ds + 1] = 0;
-		++ds;
-	}
+	if (argc > 4) {
+		DIR *dp;
+		struct dirent *ep;
+		void *handle;
+		int i;
+		size_t ds = strlen(argv[4]);
+		char fnamebuf[512] = {0};
+		strncpy(fnamebuf, argv[4], 512);
+		if (fnamebuf[ds - 1] != '/') {
+			fnamebuf[ds] = '/';
+			fnamebuf[ds + 1] = 0;
+			++ds;
+		}
 
-	dp = opendir(argv[4]);
-	if (dp == NULL) {
-		fprintf(stderr, "%s: Could not open dynlib dir.\n", argv[0]);
-		goto cleanup;
-	}
+		dp = opendir(argv[4]);
+		if (dp == NULL) {
+			fprintf(stderr, "%s: Could not open dynlib dir.\n", argv[0]);
+			goto cleanup;
+		}
 
-	while ((ep = readdir(dp))) {
-		for (i = 0; libs[i].name != NULL; ++i) {
-			if (!strncmp(ep->d_name, libs[i].name, libs[i].len)) {
-				strncpy(fnamebuf + ds, ep->d_name, 512 - ds);
-				fnamebuf[511] = 0;
-				handle = dlopen(fnamebuf, RTLD_LAZY | RTLD_NODELETE);
-				dlclose(handle);
-				break;
+		while ((ep = readdir(dp))) {
+			for (i = 0; libs[i].name != NULL; ++i) {
+				if (!strncmp(ep->d_name, libs[i].name, libs[i].len)) {
+					strncpy(fnamebuf + ds, ep->d_name, 512 - ds);
+					fnamebuf[511] = 0;
+					handle = dlopen(fnamebuf, RTLD_LAZY | RTLD_NODELETE);
+					dlclose(handle);
+					break;
+				}
 			}
 		}
-	}
 
-	closedir(dp);
+		closedir(dp);
+	}
 
 	// set up our SIGSYS handler; any disallowed syscalls are trapped by this handler
 	// and sent up to the parent to process.
@@ -345,7 +347,7 @@ int main(int argc, char *argv[])
 	Py_Initialize();
 
 	// optional user init code
-	mainpy = fopen("/tmp/init.py", "r");
+	mainpy = fopen("init.py", "r");
 	if (mainpy != NULL) {
 		// this closes mainpy after completion so we don't need to fclose it in cleanup
 		ret = PyRun_SimpleFile(mainpy, "init.py");
@@ -391,7 +393,7 @@ int main(int argc, char *argv[])
 
 	// at this point, init is complete and we can begin to run user code.
 	// The parent is expected to provide a /tmp/main.py file for this.
-	mainpy = fopen("/tmp/main.py", "r");
+	mainpy = fopen("main.py", "r");
 	if (mainpy == NULL) {
 		ret = errno;
 		fprintf(stderr, "%s: Cannot open main.py.\n", argv[0]);

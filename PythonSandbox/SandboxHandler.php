@@ -9,7 +9,7 @@ class SandboxHandler {
 		$this->sb = $sb;
 	}
 
-	public function completeInit() {
+	public function complete_init() {
 		$this->sb->setInitialized();
 	}
 }

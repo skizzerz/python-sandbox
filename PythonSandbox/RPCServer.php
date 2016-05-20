@@ -71,10 +71,12 @@ class RPCServer {
 					$m = $handler->getMethod( $call->name );
 					$ret = $m->invokeArgs( $obj, $call->args );
 					$errno = 0;
-					$data = false;
+					$data = null;
 
 					if ( is_array( $ret ) ) {
 						list( $ret, $data ) = $ret;
+					} elseif ( $ret === null ) {
+						$ret = 0;
 					}
 				} catch ( RPCException $e ) {
 					$ret = -1;
