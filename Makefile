@@ -2,16 +2,22 @@ CC=/usr/bin/gcc
 # TODO: have a configure script to alter PYCONFIG in order to alter what python is used
 PYCONFIG=/usr/bin/python3.5-config
 PKG_CONFIG=/usr/bin/pkg-config
-CFLAGS=$(shell $(PKG_CONFIG) --cflags json-c) $(shell $(PYCONFIG) --cflags) -DSB_DEBUG
+CFLAGS=$(shell $(PKG_CONFIG) --cflags json-c) $(shell $(PYCONFIG) --cflags) -std=gnu11 -DSB_DEBUG
 LDFLAGS=$(shell $(PKG_CONFIG) --libs json-c) $(shell $(PYCONFIG) --ldflags) -lseccomp
 
 all: libsbpreload.so sandbox
 
-sandbox: sandbox.o sblibc.o sbio.o
-	$(CC) -o sandbox sandbox.o sblibc.o sbio.o $(LDFLAGS)
+sandbox: sandbox.o sandbox-child.o sandbox-parent.o sblibc.o sbio.o
+	$(CC) -o sandbox sandbox.o sandbox-child.o sandbox-parent.o sblibc.o sbio.o $(LDFLAGS)
 
 sandbox.o: sandbox.c sbcontext.h
 	$(CC) -c sandbox.c $(CFLAGS)
+
+sandbox-child.o: sandbox-child.c sbcontext.h
+	$(CC) -c sandbox-child.c $(CFLAGS)
+
+sandbox-parent.o: sandbox-parent.c sbcontext.h
+	$(CC) -c sandbox-parent.c $(CFLAGS)
 
 sblibc.o: sblibc.c sbcontext.h sblibc.h
 	$(CC) -c sblibc.c $(CFLAGS)

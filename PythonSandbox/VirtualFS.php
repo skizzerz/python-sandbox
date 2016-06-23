@@ -57,6 +57,10 @@ class VirtualFS {
 		$this->root[] = new RealDir( $this, 'dev', '/dev',
 			[ 'fileWhitelist' => [ 'urandom' ] ] );
 
+		// support writing to /dev/null and reading from /dev/zero
+		$this->root['dev'][] = new ZerofillFile( $this, 'zero' );
+		$this->root['dev'][] = new SinkholeFile( $this, 'null' );
+
 		// detect if we are in a virtualenv; if we are we need an orig-prefix.txt file
 		// and another dir in lib that points to the real python installation, as virtualenv
 		// does not include every base python library (such as json).
@@ -123,9 +127,6 @@ class VirtualFS {
 		} elseif ( $flags & ( O_CREAT | O_EXCL ) ) {
 			// file exists and we're supposed to be creating it only
 			throw new SyscallException( EEXIST );
-		} elseif ( $flags & ( O_WRONLY | O_RDWR ) ) {
-			// write requested, which is not allowed
-			throw new SyscallException( EROFS );
 		}
 
 		$maxfds = $this->app->getConfigurationInstance()->get( 'MaxFDs' );
@@ -201,6 +202,15 @@ class VirtualFS {
 		} elseif ( !isset( $this->fds[$fd] ) ) {
 			throw new SyscallException( EBADF );
 		}
+	}
+
+	// for internal use only
+	public function getfd( $fd ) {
+		if ( $fd >= 0 && $fd <= 4 ) {
+			throw new SyscallException( EPERM );
+		}
+
+		return isset( $this->fds[$fd] ) ? $this->fds[$fd] : null;
 	}
 
 	public function dup( $oldFd, $newFd = 0, $exactFd = false ) {

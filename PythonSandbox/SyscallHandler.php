@@ -97,6 +97,16 @@ class SyscallHandler {
 		throw new SyscallException( EINVAL, 'The named file is not a symbolic link.' );
 	}
 
+	public function access( $path, $mode ) {
+		if ( !$this->sb->getfs()->access( $path, $mode ) ) {
+			throw new SyscallException( EACCES );
+		} elseif ( $mode & W_OK ) {
+			throw new SyscallException( EROFS );
+		}
+
+		return 0;
+	}
+
 	public function getdents( $fd, $bufsize, $structBytes ) {
 		$arr = $this->sb->getfs()->getdents( $fd, $bufsize, $structBytes );
 
@@ -124,5 +134,75 @@ class SyscallHandler {
 
 	public function getegid() {
 		return SB_GID;
+	}
+
+	public function statfs( $path ) {
+		// SELinux calls this, not sure what else. File an issue on github if
+		// a real implementation of this is important since PHP cannot actually
+		// call the real statfs(2).
+		throw new SyscallException( ENOSYS );
+	}
+
+	public function poll( $fds, $timeout ) {
+		$r = [];
+		$w = [];
+		$x = [];
+
+		$ret = [];
+
+		foreach ( $fds as $i => $fd ) {
+			$f = $this->sb->getfs()->getfd( $fd->fd );
+			$ret[$i] = 0;
+
+			if ( $f === null && $fd['fd'] >= 0 ) {
+				$ret[$i] = POLLNVAL;
+			} elseif ( $f instanceOf VirtualFD && ( $fd->events & POLLIN ) && $f->canRead() ) {
+				$ret[$i] = POLLIN;
+			} elseif ( $f instanceOf RealFD ) {
+				$fh = $f->getfh();
+
+				if ( $fd->events & POLLIN ) {
+					$r[$i] = $fh;
+				}
+
+				if ( $fd->events & POLLOUT ) {
+					$w[$i] = $fh;
+				}
+
+				if ( $fd->events & POLLPRI ) {
+					$x[$i] = $fh;
+				}
+			}
+		}
+
+		if ( count( $r ) + count( $w ) + count( $x ) > 0 ) {
+			if ( $timeout > 5000 || $timeout < 0 ) {
+				$ts = 5;
+				$tu = 0;
+			} else {
+				$ts = (int)( $timeout / 1000 );
+				$tu = ( $timeout % 1000 ) * 1000;
+			}
+
+			if ( stream_select( $r, $w, $x, $ts, $tu ) === false ) {
+				throw new SyscallException( EINTR );
+			}
+
+			foreach ( $r as $i => $fh ) {
+				$ret[$i] |= POLLIN;
+			}
+
+			foreach ( $w as $i => $fh ) {
+				$ret[$i] |= POLLOUT;
+			}
+
+			foreach ( $x as $i => $fh ) {
+				$ret[$i] |= POLLPRI;
+			}
+		}
+
+		$code = array_reduce( $ret, function ( $y, $x ) { return $y + ( $x > 0 ); }, 0 );
+
+		return [ $code, $ret ];
 	}
 }

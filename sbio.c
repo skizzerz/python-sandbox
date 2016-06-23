@@ -6,60 +6,88 @@
 #include <stdio.h>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <asm/unistd.h>
 #include <fcntl.h>
 #include <json/json.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/cdefs.h>
 #include <sys/mman.h>
+#include <sys/vfs.h>
+#include <sys/uio.h>
 #include <signal.h>
 #include <dirent.h>
+#include <poll.h>
 
 #include "sbcontext.h"
 #include "sblibc.h"
 
-static int urandom_fd = -1;
+/* when !is_child, all args are void * into a static buffer of size 65537.
+ * The first argument is the start of that buffer; we overwrite
+ * that buffer with output data, prefixed by the length of said data.
+ */
+
+static const int16_t ns_sys = NS_SYS;
+static uint16_t callnum;
+static uint16_t arglen;
+static struct iovec request[9] = {
+	{ (void *)&ns_sys, 2 },
+	{ &callnum, 2 },
+	{ &arglen, 2 }
+};
+
+static int syscode;
+static int syserrno;
+static struct iovec response[8] = {
+	{ &syscode, sizeof(int) },
+	{ &syserrno, sizeof(int) }
+};
 
 SYS(open)
 {
-	const char *pathname = va_arg(args, const char *);
-	int flags = va_arg(args, int);
-	int mode = va_arg(args, int);
+	const char *pathname;
+	int flags, mode, ret;
+	int *len;
 
-	if (!strcmp("/dev/urandom", pathname) && flags == O_RDONLY) {
-		if (urandom_fd > -1) {
-			return urandom_fd;
-		}
+	if (is_child) {
+		pathname = va_arg(args, const char *);
+		flags = va_arg(args, int);
+		mode = va_arg(args, int);
 
-		// json-c init tries to open /dev/urandom with O_RDONLY
-		// as such, we need to hardcode the json string request since
-		// we cannot rely on json-c to do it for us
-		int ret = writejson("{\"ns\":0,\"name\":\"open\",\"args\":[\"/dev/urandom\",0],\"raw\":true}");
+		request[3].iov_base = (void *)pathname;
+		request[3].iov_len = strlen(pathname);
+		request[4].iov_base = &flags;
+		request[4].iov_len = sizeof(int);
+		request[5].iov_base = &mode;
+		request[5].iov_len = sizeof(int);
+		callnum = __NR_open;
+		arglen = request[3].iov_len + request[4].iov_len + request[5].iov_len;
 
+		ret = writev(RPCSOCK, request, 6);
 		if (ret < 0) {
-			debug_error("writejson failed with errno %d\n", errno);
-			exit(errno);
+			debug_error("writev failed: %s", strerror(errno));
+			exit(EIO);
 		}
 
-		ret = readraw("%d %d", &urandom_fd, &errno);
+		ret = readv(RPCSOCK, response, 2);
 		if (ret < 0) {
-			debug_error("readraw failed with errno %d\n", errno);
-			exit(errno);
+			debug_error("read failed: %s", strerror(errno));
+			exit(EIO);
 		}
 
-		return urandom_fd;
+		errno = syserrno;
+	} else {
+		len = va_arg(args, int *);
+
+		pathname = (const char *)len;
+		flags = *va_arg(args, int *);
+		mode = *va_arg(args, int *);
+
+		syscode = open_node(pathname, flags, mode);
+		*len = 0;
 	}
 
-	int numargs = 2;
-	json_object *arg1 = json_object_new_string(pathname);
-	json_object *arg2 = json_object_new_int(flags);
-	json_object *arg3 = NULL;
-
-	if (flags & (O_CREAT | O_TMPFILE)) {
-		arg3 = json_object_new_int(mode);
-	}
-
-	return trampoline(NULL, NS_SYS, "open", numargs, arg1, arg2, arg3);
+	return syscode;
 }
 
 SYS(fcntl)
@@ -151,30 +179,6 @@ SYS(fcntl)
 SYS(close)
 {
 	int fd = va_arg(args, int);
-
-	if (fd == urandom_fd) {
-		char buf[64] = {0};
-		int ret = 0;
-		int code = 0;
-
-		urandom_fd = -1;
-
-		snprintf(buf, 64, "{\"ns\":0,\"name\":\"close\",\"args\":[%d],\"raw\":true}", fd);
-		ret = writejson(buf);
-		if (ret < 0) {
-			debug_error("writejson failed with errno %d\n", errno);
-			exit(errno);
-		}
-
-		ret = readraw("%d %d", &code, &errno);
-		if (ret < 0) {
-			debug_error("readraw failed with errno %d\n", errno);
-			exit(errno);
-		}
-
-		return code;
-	}
-
 	json_object *arg1 = json_object_new_int(fd);
 
 	return trampoline(NULL, NS_SYS, "close", 1, arg1);
@@ -188,39 +192,6 @@ SYS(read)
 
 	int code = 0;
 	int ret = 0;
-
-	if (fd == urandom_fd) {
-		// still in json init, so hardcode a raw read
-		char *buf2 = (char *)malloc(65536);
-
-		snprintf(buf2, 65536, "{\"ns\":0,\"name\":\"read\",\"args\":[%d,%u],\"raw\":true}", fd, (unsigned int)count);
-		ret = writejson(buf2);
-		if (ret < 0) {
-			debug_error("writejson failed with errno %d\n", errno);
-			exit(errno);
-		}
-
-		ret = readraw("%d %d %65535s", &code, &errno, buf2);
-		if (ret < 0) {
-			debug_error("readraw failed with errno %d\n", errno);
-			exit(errno);
-		}
-
-		if (code <= 0) {
-			free(buf2);
-			return code;
-		}
-
-		size_t count2 = count;
-		ret = base64decode(buf2, strlen(buf2), buf, &count2);
-		if (ret != 0) {
-			debug_error("base64decode failed\n");
-			exit(1);
-		}
-
-		free(buf2);
-		return code;
-	}
 
 	json_object *arg1 = json_object_new_int(fd);
 	json_object *arg2 = json_object_new_int64(count);
@@ -274,27 +245,6 @@ SYS(stat)
 	struct stat *buf = va_arg(args, struct stat *);
 
 	int ret = 0;
-	int code = 0;
-
-	if (!strcmp("/dev/urandom", path)) {
-		ret = writejson("{\"ns\":0,\"name\":\"stat\",\"args\":[\"/dev/urandom\"],\"raw\":true}");
-		if (ret < 0) {
-			debug_error("writejson failed with errno %d\n", errno);
-			exit(errno);
-		}
-
-		ret = readraw("%d %d %u %u %u %u %u %u %u %u %u %u %u %u %u", &code, &errno,
-				&buf->st_dev, &buf->st_ino, &buf->st_mode, &buf->st_nlink,
-				&buf->st_uid, &buf->st_gid, &buf->st_rdev, &buf->st_size,
-				&buf->st_atim.tv_sec, &buf->st_mtim.tv_sec, &buf->st_ctim.tv_sec,
-				&buf->st_blksize, &buf->st_blocks);
-		if (ret < 0) {
-			debug_error("readraw failed with errno %d\n", errno);
-			exit(errno);
-		}
-
-		return code;
-	}
 
 	json_object *arg1 = json_object_new_string(path);
 	json_object *out = NULL;
@@ -726,6 +676,133 @@ SYS(dup)
 	json_object *arg1 = json_object_new_int(oldfd);
 
 	return trampoline(NULL, NS_SYS, "dup", 1, arg1);
+}
+
+SYS(statfs)
+{
+	const char *path = va_arg(args, const char *);
+	struct statfs *buf = va_arg(args, struct statfs *);
+
+	json_object *arg1 = json_object_new_string(path);
+	json_object *out = NULL;
+	json_object *data = NULL;
+	json_object *fld = NULL;
+
+	int ret = trampoline(&out, NS_SYS, "statfs", 1, arg1);
+	if (ret < 0) {
+		json_object_put(out);
+		return ret;
+	}
+
+	if (!json_object_object_get_ex(out, "data", &data)) {
+		debug_error("data expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(data, json_type_object)) {
+		debug_error("data is not an object\n");
+		exit(EPROTO);
+	}
+
+	ST_GET(__SWORD_TYPE, f_type);
+	ST_GET(__SWORD_TYPE, f_bsize);
+	ST_GET(fsblkcnt_t, f_blocks);
+	ST_GET(fsblkcnt_t, f_bfree);
+	ST_GET(fsblkcnt_t, f_bavail);
+	ST_GET(fsfilcnt_t, f_files);
+	ST_GET(fsfilcnt_t, f_ffree);
+	ST_GET(__SWORD_TYPE, f_namelen);
+	ST_GET(__SWORD_TYPE, f_frsize);
+
+	// fsid_t is a struct apparently so we need to do special stuff here
+	if (!json_object_object_get_ex(data, "f_fsid", &fld)) {
+		debug_error("data.f_fsid expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(fld, json_type_int)) {
+		debug_error("data.f_fsid is not an int\n");
+		exit(EPROTO);
+	}
+
+	int64_t fsid = json_object_get_int64(fld);
+	buf->f_fsid.__val[0] = (int32_t)(fsid >> 32);
+	buf->f_fsid.__val[1] = (int32_t)fsid;
+
+	json_object_put(out);
+	return ret;
+}
+
+SYS(access)
+{
+	const char *pathname = va_arg(args, const char *);
+	int mode = va_arg(args, int);
+
+	json_object *arg1 = json_object_new_string(pathname);
+	json_object *arg2 = json_object_new_int(mode);
+
+	return trampoline(NULL, NS_SYS, "access", 2, arg1, arg2);
+}
+
+SYS(poll)
+{
+	struct pollfd *fds = va_arg(args, struct pollfd *);
+	nfds_t nfds = va_arg(args, nfds_t);
+	int timeout = va_arg(args, int);
+
+	json_object *arg1 = json_object_new_array();
+	json_object *arg2 = json_object_new_int(timeout);
+	json_object *obj = NULL;
+	json_object *out = NULL;
+	json_object *data = NULL;
+
+	size_t i = 0;
+	int ret;
+
+	for (i = 0; i < nfds; ++i) {
+		obj = json_object_new_object();
+		json_object_object_add(obj, "fd", json_object_new_int(fds[i].fd));
+		json_object_object_add(obj, "events", json_object_new_int(fds[i].events));
+		json_object_array_add(arg1, obj);
+	}
+
+	ret = trampoline(&out, NS_SYS, "poll", 2, arg1, arg2);
+	if (ret <= 0) {
+		json_object_put(out);
+		return ret;
+	}
+
+	if (!json_object_object_get_ex(out, "data", &data)) {
+		debug_error("data expected\n");
+		exit(EPROTO);
+	}
+
+	if (!json_object_is_type(data, json_type_array)) {
+		debug_error("data is not an array\n");
+		exit(EPROTO);
+	}
+
+	size_t len = (size_t)json_object_array_length(data);
+	if (len == 0) {
+		debug_error("0 length array but nonzero return value\n");
+		exit(EPROTO);
+	} else if (len != nfds) {
+		debug_error("input and output array length mismatch\n");
+		exit(EPROTO);
+	}
+
+	for (i = 0; i < nfds; ++i) {
+		obj = json_object_array_get_idx(data, i);
+		if (!json_object_is_type(obj, json_type_int)) {
+			debug_error("array value not an int\n");
+			exit(EPROTO);
+		}
+
+		fds[i].revents = json_object_get_int(obj);
+	}
+
+	json_object_put(out);
+	return ret;
 }
 
 // we do not forward mmap calls as-is

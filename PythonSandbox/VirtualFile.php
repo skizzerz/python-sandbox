@@ -30,6 +30,10 @@ class VirtualFile extends FileBase {
 		return substr( $this->contents, $pos, $length );
 	}
 
+	public function writeInternal( $pos, $length ) {
+		throw new SyscallException( EROFS );
+	}
+
 	public function getLen() {
 		return $this->len;
 	}

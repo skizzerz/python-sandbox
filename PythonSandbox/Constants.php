@@ -127,3 +127,11 @@ const F_NOTIFY        = 1026;
 const F_DUPFD_CLOEXEC = 1030;
 const F_SETPIPE_SZ    = 1031;
 const F_GETPIPE_SZ    = 1032;
+
+// poll constants
+const POLLIN   = 001;
+const POLLPRI  = 002;
+const POLLOUT  = 004;
+const POLLERR  = 010;
+const POLLHUP  = 020;
+const POLLNVAL = 040;

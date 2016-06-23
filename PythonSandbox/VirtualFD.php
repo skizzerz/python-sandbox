@@ -5,6 +5,12 @@ namespace PythonSandbox;
 class VirtualFD extends FDBase {
 	protected $pos = 0;
 
+	public function canRead() {
+		$len = $this->node->getLen();
+
+		return $this->pos < $len;
+	}
+
 	public function read( $length ) {
 		if ( $this->node === null ) {
 			throw new SyscallException( EBADF );
@@ -12,6 +18,17 @@ class VirtualFD extends FDBase {
 
 		$ret = $this->node->readInternal( $this->pos, $length );
 		$this->pos += $length;
+
+		return $ret;
+	}
+
+	public function write( $contents ) {
+		if ( $this->node === null ) {
+			throw new SyscallException( EBADF );
+		}
+
+		$ret = $this->node->writeInternal( $this->pos, $contents );
+		$this->pos += $ret;
 
 		return $ret;
 	}

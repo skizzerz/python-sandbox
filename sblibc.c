@@ -91,49 +91,6 @@ cleanup:
 	return code;
 }
 
-// read raw data from the input, useful during json library init
-// this is still newline-separated (e.g. we fgets() and then run vsscanf() on that)
-int readraw(const char *format, ...)
-{
-	// allocate a large enough buffer for our json data
-	// (if the json is longer than this, we'll terminate the program)
-	char *buf = (char *)malloc(65536);
-	char *ret = NULL;
-	int code = 0;
-	va_list args;
-
-	if (format == NULL) {
-		errno = EINVAL;
-		code = -2;
-		goto cleanup;
-	}
-
-	if (pipein == NULL) {
-		pipein = fdopen(PIPEIN, "r");
-	}
-
-	ret = fgets(buf, 65536, pipein);
-	if (ret == NULL) {
-		code = -1;
-		goto cleanup;
-	}
-
-	va_start(args, format);
-	vsscanf(buf, format, args);
-	va_end(args);
-
-	if (feof(pipein)) {
-		code = -1;
-		errno = EIO;
-		goto cleanup;
-	}
-
-cleanup:
-	free(buf);
-
-	return code;
-}
-
 void _debug_backtrace() {
 	void *buffer[32];
 	int n = backtrace(buffer, 32);
@@ -152,34 +109,71 @@ void fatal(const char *msg)
 #define SB_JSON_FLAGS JSON_C_TO_STRING_PLAIN
 #endif
 
-// we send a JSON line containing the call in the following format:
-// {"ns": int, "name": "str", "args": [any...]}
-// we then get a JSON reply in the following format:
-// {"code": int, "errno": int, "data": any, "base64": bool}
-// (errno, data, and base64 are optional keys, code is required; base64 indicates
-// the data is base64-encoded)
+/* We use JSON-RPC 2.0 as the communication format.
+ * On success, the response key should be an object with the following keys:
+ * code - int; this will be the return value of trampoline().
+ * data - any; required if out is not NULL, is not read if out is NULL.
+ *   The value of data will be stored in out.
+ * base64 - bool (optional); if true data must be a base64-encoded string,
+ *   it will be decoded before writing it to out.
+ */
 int trampoline(struct json_object **out, int ns, const char *fname, int numargs, ...)
 {
+	static size_t id = 0;
+
 	va_list vargs;
 	int ret = 0, i;
+	char *decorated_fname = (char *)malloc(strlen(fname) + 5);
+	if (decorated_fname == NULL) {
+		debug_error("Out of memory");
+		exit(errno);
+	}
+
 	json_object *callinfo = json_object_new_object();
 	json_object *response = NULL;
 	json_object *json_code = NULL;
 	json_object *json_errno = NULL;
+	json_object *json_temp = NULL;
 	json_object *json_data = NULL;
-	json_object *name = json_object_new_string(fname);
+	json_object *name = NULL;
 	json_object *args = json_object_new_array();
-	json_object *namespace = json_object_new_int(ns);
+	json_object *version = json_object_new_string("2.0");
+	json_object *json_id = json_object_new_int64(id);
+
+	switch (ns) {
+	case NS_SYS:
+		strcpy(decorated_fname, "sys.");
+		break;
+	case NS_SB:
+		strcpy(decorated_fname, "sb.");
+		break;
+	case NS_APP:
+		strcpy(decorated_fname, "app.");
+		break;
+	}
+
+	// decorated_fname is guaranteed to be large enough to hold the prefix above
+	// (max 4 bytes), fname, and the trailing NULL byte because the size of it
+	// is fname + 5.
+	strcat(decorated_fname, fname);
+	name = json_object_new_string(decorated_fname);
+	free(decorated_fname);
 
 	va_start(vargs, numargs);
-	for (i = 0; i < numargs; ++i) {
-		json_object_array_add(args, va_arg(vargs, json_object *));
+	if (numargs == -1) {
+		json_object_put(args);
+		args = va_arg(vargs, json_object *);
+	} else {
+		for (i = 0; i < numargs; ++i) {
+			json_object_array_add(args, va_arg(vargs, json_object *));
+		}
 	}
 	va_end(vargs);
 
-	json_object_object_add(callinfo, "ns", namespace);
-	json_object_object_add(callinfo, "name", name);
-	json_object_object_add(callinfo, "args", args);
+	json_object_object_add(callinfo, "jsonrpc", version);
+	json_object_object_add(callinfo, "method", name);
+	json_object_object_add(callinfo, "params", args);
+	json_object_object_add(callinfo, "id", json_id);
 
 	ret = writejson(json_object_to_json_string_ext(callinfo, SB_JSON_FLAGS));
 	if (ret < 0) {
@@ -193,60 +187,56 @@ int trampoline(struct json_object **out, int ns, const char *fname, int numargs,
 		exit(-errno);
 	}
 
-	if (!json_object_is_type(response, json_type_object)) {
-		debug_error("response is not json object.\n");
-		exit(EPROTO);
-	}
-
-	if (!json_object_object_get_ex(response, "code", &json_code)) {
-		debug_error("response does not have field code.\n");
-		exit(EPROTO);
-	}
-
-	if (!json_object_is_type(json_code, json_type_int)) {
-		debug_error("response code is not int.\n");
-		exit(EPROTO);
-	}
-
-	ret = json_object_get_int(json_code);
-
-	if (ret == -1 && json_object_object_get_ex(response, "errno", &json_errno)) {
-		if (!json_object_is_type(json_errno, json_type_int)) {
-			debug_error("response has errno but it is not int.\n");
-			exit(EPROTO);
-		}
-
+	// we trust the parent implementation of json-rpc and do not validate that id is correct
+	// as we are not equipped to handle out-of-order responses anyway due to being singlethreaded.
+	// similarly, we do not validate that jsonrpc is set and equals 2.0 in the response.
+	if (json_object_object_get_ex(response, "error", &json_data)) {
+		ret = -1;
+		json_object_object_get_ex(json_data, "code", &json_errno);
+		json_object_object_get_ex(json_data, "message", &json_temp);
 		errno = json_object_get_int(json_errno);
-	} else {
-		errno = 0;
-	}
 
-	if (json_object_object_get_ex(response, "base64", &json_data) &&
-		json_object_get_boolean(json_data) &&
-		json_object_object_get_ex(response, "data", &json_data) &&
-		json_object_is_type(json_data, json_type_string))
-	{
-		const char *b64 = json_object_get_string(json_data);
-		size_t b64_len = (size_t)json_object_get_string_len(json_data) + 1;
-		char *b64_buf = (char *)malloc(b64_len);
-		
-		if (base64decode(b64, strlen(b64), (unsigned char *)b64_buf, &b64_len)) {
-			debug_error("invalid base64-encoded data.\n");
+		if (errno >= -32768 && errno <= -32000) {
+			debug_error("JSON-RPC error %d: %s\n", errno, json_object_get_string(json_temp));
 			exit(EPROTO);
 		}
 
-		json_data = json_object_new_string_len(b64_buf, b64_len);
-		json_object_object_del(response, "data");
-		json_object_object_add(response, "data", json_data);
-		free(b64_buf);
-	}
+		if (out != NULL) {
+			*out = json_object_get(json_data);
+		}
+	} else if (json_object_object_get_ex(response, "result", &json_data)) {
+		errno = 0;
+		json_object_object_get_ex(json_data, "code", &json_code);
+		ret = json_object_get_int(json_code);
 
-	if (out == NULL) {
-		json_object_put(response);
+		if (out != NULL) {
+			json_object_object_get_ex(json_data, "data", out);
+
+			if (json_object_object_get_ex(json_data, "base64", &json_temp) &&
+				json_object_get_boolean(json_temp))
+			{
+				const char *b64 = json_object_get_string(*out);
+				size_t b64_len = (size_t)json_object_get_string_len(*out) + 1;
+				char *b64_buf = (char *)malloc(b64_len);
+		
+				if (base64decode(b64, strlen(b64), (unsigned char *)b64_buf, &b64_len)) {
+					debug_error("invalid base64-encoded data.\n");
+					exit(EPROTO);
+				}
+
+				*out = json_object_new_string_len(b64_buf, b64_len);
+				free(b64_buf);
+			} else {
+				// need to increment refcount for this since we're freeing response below
+				*out = json_object_get(*out);
+			}
+		}
 	} else {
-		*out = response;
+		debug_error("Neither error nor result are set in response.\n");
+		exit(EPROTO);
 	}
 
+	json_object_put(response);
 	return ret;
 }
 
@@ -316,9 +306,9 @@ int base64decode(const char *in, size_t inLen, unsigned char *out, size_t *outLe
 }
 
 const struct sys_arg_map arg_map[] = {
-	ASYS(open, 3),
-	ASYS(fcntl, 3),
-	ASYS(close, 1),
+	ASYS(open, 3, 0, sizeof(int), sizeof(mode_t)),
+	ASYS(fcntl, 3, sizeof(int), sizeof(int), -1),
+	ASYS(close, 1, sizeof(int)),
 	ASYS(read, 3),
 	ASYS(stat, 2),
 	ASYS(fstat, 2),
@@ -329,6 +319,9 @@ const struct sys_arg_map arg_map[] = {
 	ASYS(lseek, 3),
 	ASYS(dup, 1),
 	ASYS(mmap, 6),
+	ASYS(statfs, 2),
+	ASYS(access, 2),
+	ASYS(poll, 3),
 	{ NULL, 0, NULL }
 };
 

@@ -16,6 +16,11 @@ class RealFD extends FDBase {
 		}
 	}
 
+	// for internal use only
+	public function getfh() {
+		return $this->fh;
+	}
+
 	public function read( $length ) {
 		if ( $this->fh === null ) {
 			throw new SyscallException( EBADF );
